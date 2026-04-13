@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+:root {
+  --color-black: #000000;
+  --color-white: #FFFFFF;
+  --color-gold: #D4A843;
+  --color-gold-light: #E8C878;
+  --color-gold-dark: #B8923A;
+  --color-navy: #0B1D3A;
+  --color-navy-light: #132C52;
+  --color-ocean: #0E4D6B;
+  --color-sand: #F2EDE4;
+  --color-offwhite: #F8F6F2;
+  --color-error: #C23B3B;
+  --color-success: #2D7A4F;
+  --color-warning: #D4A843;
+  --font-primary: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: 'SF Mono', 'Fira Code', monospace;
+}
+
+@theme inline {
+  --color-background: var(--color-navy);
+  --color-foreground: var(--color-white);
+  --color-gold: #D4A843;
+  --color-gold-light: #E8C878;
+  --color-gold-dark: #B8923A;
+  --color-navy: #0B1D3A;
+  --color-navy-light: #132C52;
+  --color-ocean: #0E4D6B;
+  --color-sand: #F2EDE4;
+  --color-offwhite: #F8F6F2;
+  --color-error: #C23B3B;
+  --color-success: #2D7A4F;
+  --font-sans: var(--font-primary);
+  --font-mono: 'SF Mono', 'Fira Code', monospace;
+}
+
+body {
+  background: var(--color-navy);
+  color: var(--color-white);
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+/* Scrollbar styling for dark theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-navy);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-navy-light);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ocean);
+}
