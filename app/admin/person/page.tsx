@@ -66,7 +66,11 @@ export default async function AdminPersonList({
             {people && people.length > 0 ? (
               people.map((person) => (
                 <tr key={person.id} className="border-b border-white/5 hover:bg-white/5">
-                  <td className="py-3 px-4 font-medium text-white">{person.full_name}</td>
+                  <td className="py-3 px-4 font-medium">
+                    <Link href={`/admin/person/${person.id}`} className="text-white hover:text-gold">
+                      {person.full_name}
+                    </Link>
+                  </td>
                   <td className="py-3 px-4">
                     <div className="flex flex-wrap gap-1">
                       {(person.entity_types || []).slice(0, 2).map((t: string) => (
