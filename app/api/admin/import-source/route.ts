@@ -16,38 +16,22 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 // ---- Preview: check source counts vs DB counts ----
 
+const CSC_RESOURCE_ID = '443bd998-1ef3-47da-9170-c2c376b2e41c'
+
 async function previewCSC() {
-  const searchRes = await fetch(`${CKAN_BASE}/package_search?q=campaign+contributions+received`)
-  const searchData = await searchRes.json()
-  let resourceId = ''
-  for (const ds of searchData?.result?.results || []) {
-    for (const r of ds.resources || []) {
-      if (r.format === 'CSV' && (r.name || '').toLowerCase().includes('contribution')) {
-        resourceId = r.id
-        break
-      }
-    }
-    if (resourceId) break
-  }
-  if (!resourceId) {
-    const altSearch = await fetch(`${CKAN_BASE}/package_search?q=campaign+spending+commission`)
-    const altData = await altSearch.json()
-    for (const ds of altData?.result?.results || []) {
-      for (const r of ds.resources || []) {
-        if (r.datastore_active) { resourceId = r.id; break }
-      }
-      if (resourceId) break
-    }
-  }
-  if (!resourceId) return { source_total: 0, db_count: 0, delta: 0 }
-
-  const countRes = await fetch(`${CKAN_BASE}/datastore_search?resource_id=${resourceId}&limit=0`)
-  const countData = await countRes.json()
-  const sourceTotal = countData?.result?.total ?? 0
-
   const supabase = createAdminClient()
-  const { count } = await supabase.from('contribution').select('id', { count: 'exact', head: true }).eq('source', 'hawaii_csc')
-  return { source_total: sourceTotal, db_count: count ?? 0, delta: sourceTotal - (count ?? 0) }
+
+  // Run both counts in parallel
+  const [ckanRes, dbRes] = await Promise.all([
+    fetch(`${CKAN_BASE}/datastore_search?resource_id=${CSC_RESOURCE_ID}&limit=0`),
+    supabase.from('contribution').select('id', { count: 'exact', head: true }).eq('source', 'hawaii_csc'),
+  ])
+
+  const ckanData = await ckanRes.json()
+  const sourceTotal = ckanData?.result?.total ?? 0
+  const dbCount = dbRes.count ?? 0
+
+  return { source_total: sourceTotal, db_count: dbCount, delta: sourceTotal - dbCount }
 }
 
 async function previewFEC() {
