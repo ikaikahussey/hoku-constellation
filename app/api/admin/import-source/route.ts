@@ -19,24 +19,22 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const CSC_RESOURCE_ID = '443bd998-1ef3-47da-9170-c2c376b2e41c'
 
 async function previewCSC() {
-  const supabase = createAdminClient()
-
-  // Run both counts in parallel
-  const [ckanRes, dbRes] = await Promise.all([
-    fetch(`${CKAN_BASE}/datastore_search?resource_id=${CSC_RESOURCE_ID}&limit=0`),
-    supabase.from('contribution').select('id', { count: 'exact', head: true }).eq('source', 'hawaii_csc'),
-  ])
-
+  // Fetch source count from CKAN
+  const ckanRes = await fetch(`${CKAN_BASE}/datastore_search?resource_id=${CSC_RESOURCE_ID}&limit=0`)
   const ckanData = await ckanRes.json()
   const sourceTotal = ckanData?.result?.total ?? 0
-  const dbCount = dbRes.count ?? 0
+
+  // Then fetch DB count (sequential — parallel causes Supabase 500)
+  const supabase = createAdminClient()
+  const { count } = await supabase.from('contribution').select('id', { count: 'estimated', head: true }).eq('source', 'hawaii_csc')
+  const dbCount = count ?? 0
 
   return { source_total: sourceTotal, db_count: dbCount, delta: sourceTotal - dbCount }
 }
 
 async function previewFEC() {
   const supabase = createAdminClient()
-  const { count: dbCount } = await supabase.from('contribution').select('id', { count: 'exact', head: true }).eq('source', 'fec')
+  const { count: dbCount } = await supabase.from('contribution').select('id', { count: 'estimated', head: true }).eq('source', 'fec')
 
   let sourceTotal = 0
   const committees = [
@@ -70,13 +68,13 @@ async function previewLobbyist() {
   const sourceTotal = countData?.result?.total ?? 0
 
   const supabase = createAdminClient()
-  const { count } = await supabase.from('lobbyist_registration').select('id', { count: 'exact', head: true })
+  const { count } = await supabase.from('lobbyist_registration').select('id', { count: 'estimated', head: true })
   return { source_total: sourceTotal, db_count: count ?? 0, delta: sourceTotal - (count ?? 0) }
 }
 
 async function previewPUC() {
   const supabase = createAdminClient()
-  const { count } = await supabase.from('puc_docket').select('id', { count: 'exact', head: true })
+  const { count } = await supabase.from('puc_docket').select('id', { count: 'estimated', head: true })
   return { source_total: 6, db_count: count ?? 0, delta: 6 - (count ?? 0), note: 'No public API — using curated docket list' }
 }
 
@@ -103,11 +101,11 @@ export async function GET(request: NextRequest) {
 
   const supabase = createAdminClient()
   const [cscCount, fecCount, lobbyist, dockets, personCount] = await Promise.all([
-    supabase.from('contribution').select('id', { count: 'exact', head: true }).eq('source', 'hawaii_csc'),
-    supabase.from('contribution').select('id', { count: 'exact', head: true }).eq('source', 'fec'),
-    supabase.from('lobbyist_registration').select('id', { count: 'exact', head: true }),
-    supabase.from('puc_docket').select('id', { count: 'exact', head: true }),
-    supabase.from('person').select('id', { count: 'exact', head: true }),
+    supabase.from('contribution').select('id', { count: 'estimated', head: true }).eq('source', 'hawaii_csc'),
+    supabase.from('contribution').select('id', { count: 'estimated', head: true }).eq('source', 'fec'),
+    supabase.from('lobbyist_registration').select('id', { count: 'estimated', head: true }),
+    supabase.from('puc_docket').select('id', { count: 'estimated', head: true }),
+    supabase.from('person').select('id', { count: 'estimated', head: true }),
   ])
 
   const bySource: Record<string, number> = {}
