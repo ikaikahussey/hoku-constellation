@@ -1,5 +1,17 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+/**
+ * Normalize a name for matching.
+ *
+ * Handles Hawaiian diacritics so that "Kauaʻi" matches "Kauai":
+ * - ʻOkina variants (U+02BB, U+2018, U+2019, ASCII `'`, backtick) are stripped.
+ * - Kahakō (macrons via combining diacritics) are stripped via NFD normalization.
+ */
 function normalize(name: string): string {
   return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // strip combining marks (kahakō)
+    .replace(/[\u02BB\u2018\u2019`']/g, '') // strip ʻokina variants
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, '')
     .replace(/\s+/g, ' ')
@@ -78,4 +90,41 @@ export function autoMatchThreshold(confidence: number): 'auto_matched' | 'review
   if (confidence >= 0.95) return 'auto_matched'
   if (confidence >= 0.70) return 'review'
   return 'unmatched'
+}
+
+/**
+ * Resolve an organization by external structured identifier.
+ * Precedence: ein → sec_cik → dcca_file_number → fec_committee_id.
+ * Returns the organization id + confidence=1.0 on exact hit, or null if none match.
+ *
+ * Callers should use this BEFORE falling back to fuzzy name matching via matchEntity().
+ */
+export async function matchOrganizationByExternalId(
+  supabase: SupabaseClient,
+  ids: {
+    ein?: string | null
+    sec_cik?: string | null
+    dcca_file_number?: string | null
+    fec_committee_id?: string | null
+  }
+): Promise<{ orgId: string; confidence: number } | null> {
+  const ordered: [keyof typeof ids, string | null | undefined][] = [
+    ['ein', ids.ein],
+    ['sec_cik', ids.sec_cik],
+    ['dcca_file_number', ids.dcca_file_number],
+    ['fec_committee_id', ids.fec_committee_id],
+  ]
+
+  for (const [col, val] of ordered) {
+    if (!val) continue
+    const { data, error } = await supabase
+      .from('organization')
+      .select('id')
+      .eq(col as string, val)
+      .limit(1)
+      .maybeSingle()
+    if (error) continue
+    if (data?.id) return { orgId: data.id, confidence: 1.0 }
+  }
+  return null
 }
