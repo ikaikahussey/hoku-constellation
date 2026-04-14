@@ -50,6 +50,7 @@ type ImportState = {
   preview?: SourcePreview
   result?: Record<string, unknown>
   error?: string
+  progress?: { inserted: number; personsCreated: number; offset: number }
 }
 
 type ImportStatus = Record<string, ImportState>
@@ -151,29 +152,60 @@ export default function AdminImport() {
   async function triggerLiveImport(sourceKey: string) {
     setImportStatus(prev => ({
       ...prev,
-      [sourceKey]: { ...prev[sourceKey], status: 'running' },
+      [sourceKey]: { ...prev[sourceKey], status: 'running', progress: undefined },
     }))
 
     try {
-      const res = await fetch('/api/admin/import-source', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: sourceKey }),
-      })
-      const data = await res.json()
+      let offset = 0
+      let totalInserted = 0
+      let totalPersons = 0
 
-      if (res.ok) {
+      // CSC uses batched imports — loop until done
+      // Other sources complete in a single request
+      while (true) {
+        const res = await fetch('/api/admin/import-source', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: sourceKey, offset }),
+        })
+        const data = await res.json()
+
+        if (!res.ok) {
+          setImportStatus(prev => ({
+            ...prev,
+            [sourceKey]: { ...prev[sourceKey], status: 'error', error: data.error || 'Import failed' },
+          }))
+          return
+        }
+
+        totalInserted += data.inserted || 0
+        totalPersons += data.personsCreated || 0
+
+        // Update progress in UI
         setImportStatus(prev => ({
           ...prev,
-          [sourceKey]: { ...prev[sourceKey], status: 'done', result: data },
+          [sourceKey]: {
+            ...prev[sourceKey],
+            status: 'running',
+            progress: { inserted: totalInserted, personsCreated: totalPersons, offset: data.nextOffset || 0 },
+          },
         }))
-        fetchStats()
-        fetchPreviews()
-      } else {
-        setImportStatus(prev => ({
-          ...prev,
-          [sourceKey]: { ...prev[sourceKey], status: 'error', error: data.error || 'Import failed' },
-        }))
+
+        if (data.done) {
+          setImportStatus(prev => ({
+            ...prev,
+            [sourceKey]: {
+              ...prev[sourceKey],
+              status: 'done',
+              result: { inserted: totalInserted, personsCreated: totalPersons },
+            },
+          }))
+          fetchStats()
+          fetchPreviews()
+          return
+        }
+
+        offset = data.nextOffset
       }
     } catch (err) {
       setImportStatus(prev => ({
@@ -292,16 +324,28 @@ export default function AdminImport() {
                   </div>
                 )}
 
+                {/* Progress */}
+                {state?.status === 'running' && state.progress && (
+                  <div className="bg-blue-900/20 border border-blue-500/20 rounded p-3 mb-3">
+                    <p className="text-xs text-blue-300 font-medium">Importing...</p>
+                    <div className="text-xs text-white/50 mt-1 space-y-0.5">
+                      <p>Records imported: <span className="text-white">{state.progress.inserted.toLocaleString()}</span></p>
+                      <p>Persons created: <span className="text-white">{state.progress.personsCreated.toLocaleString()}</span></p>
+                      <p>Progress: <span className="text-white">{state.progress.offset.toLocaleString()}</span> rows processed</p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Import result */}
                 {state?.status === 'done' && state.result && (
                   <div className="bg-green-900/20 border border-green-500/20 rounded p-3 mb-3">
                     <p className="text-xs text-green-300 font-medium">Import complete</p>
-                    <div className="text-xs text-white/50 mt-1">
+                    <div className="text-xs text-white/50 mt-1 space-y-0.5">
                       {state.result.inserted !== undefined && (
-                        <span>Inserted: {String(state.result.inserted)}</span>
+                        <p>Records imported: <span className="text-white">{Number(state.result.inserted).toLocaleString()}</span></p>
                       )}
-                      {state.result.total !== undefined && (
-                        <span className="ml-3">Fetched: {String(state.result.total)}</span>
+                      {state.result.personsCreated !== undefined && (
+                        <p>Persons created: <span className="text-white">{Number(state.result.personsCreated).toLocaleString()}</span></p>
                       )}
                       {typeof state.result.note === 'string' && (
                         <p className="mt-1">{state.result.note}</p>

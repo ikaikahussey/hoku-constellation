@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { importCSCFull } from '@/lib/import/sources/csc'
+import { importCSCBatch } from '@/lib/import/sources/csc'
 import { importFECFull } from '@/lib/import/sources/fec'
 import { importLobbyistFull } from '@/lib/import/sources/lobbyist'
 import { importPUCFull } from '@/lib/import/sources/puc'
+
+export const maxDuration = 55
 
 const CKAN_BASE = 'https://opendata.hawaii.gov/api/3/action'
 const FEC_BASE = 'https://api.open.fec.gov/v1'
@@ -136,9 +138,11 @@ export async function GET(request: NextRequest) {
 }
 
 // ---- POST: Trigger an import ----
+// CSC uses batched imports (offset/limit) to stay within serverless timeout.
+// The UI calls repeatedly until done=true.
 export async function POST(request: NextRequest) {
   const body = await request.json()
-  const { source } = body as { source: string }
+  const { source, offset } = body as { source: string; offset?: number }
 
   if (!source) {
     return NextResponse.json({ error: 'source is required' }, { status: 400 })
@@ -147,9 +151,17 @@ export async function POST(request: NextRequest) {
   try {
     let result
     switch (source) {
-      case 'hawaii_csc':
-        result = await importCSCFull()
-        break
+      case 'hawaii_csc': {
+        const batchResult = await importCSCBatch(offset ?? 0, 1000)
+        return NextResponse.json({
+          success: true,
+          source,
+          inserted: batchResult.inserted,
+          personsCreated: batchResult.personsCreated,
+          nextOffset: batchResult.nextOffset,
+          done: batchResult.done,
+        })
+      }
       case 'fec':
         result = await importFECFull()
         break
@@ -163,7 +175,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: `Unknown source: ${source}` }, { status: 400 })
     }
 
-    return NextResponse.json({ success: true, source, ...result })
+    return NextResponse.json({ success: true, source, done: true, ...result })
   } catch (e) {
     console.error(`Import error for ${source}:`, e)
     return NextResponse.json(
