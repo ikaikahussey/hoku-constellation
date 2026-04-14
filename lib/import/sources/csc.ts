@@ -75,13 +75,22 @@ export async function importCSCBatch(
     const recipientPersonId = candidateSlug ? personMap.get(candidateSlug) || null : null
     const donorPersonId = donorSlug ? personMap.get(donorSlug) || null : null
 
+    // Parse amount — keep 0 as valid (NOT NULL column)
+    const rawAmount = row['Amount'] || row['amount'] || '0'
+    const amount = parseFloat(String(rawAmount)) || 0
+
+    // Parse date — extract YYYY-MM-DD from timestamp like "2016-06-16T23:43:05"
+    const rawDate = row['Date'] || row['date'] || row['Receipt Date'] || ''
+    const dateMatch = String(rawDate).match(/^\d{4}-\d{2}-\d{2}/)
+    const contributionDate = dateMatch ? dateMatch[0] : null
+
     return {
-      donor_name_raw: donorName || null,
-      recipient_name_raw: candidateName || null,
+      donor_name_raw: donorName || 'Unknown',
+      recipient_name_raw: candidateName || 'Unknown',
       recipient_person_id: recipientPersonId,
       donor_person_id: donorPersonId,
-      amount: parseFloat(row['Amount'] || row['amount'] || '0') || null,
-      contribution_date: row['Date'] || row['date'] || row['Receipt Date'] || null,
+      amount,
+      contribution_date: contributionDate,
       contribution_type: row['Contributor Type'] || row['contributor_type'] || 'other',
       election_period: row['Election Period'] || row['election_period'] || null,
       source: 'hawaii_csc',
