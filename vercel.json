@@ -1,0 +1,8 @@
+{
+  "crons": [
+    { "path": "/api/cron/import-csc", "schedule": "0 6 * * *" },
+    { "path": "/api/cron/import-fec", "schedule": "0 7 * * *" },
+    { "path": "/api/cron/import-lobbyist", "schedule": "0 8 * * 1" },
+    { "path": "/api/cron/import-puc", "schedule": "0 9 * * 1" }
+  ]
+}
