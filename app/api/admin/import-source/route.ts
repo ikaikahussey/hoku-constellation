@@ -118,11 +118,12 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = createAdminClient()
-  const [cscCount, fecCount, lobbyist, dockets] = await Promise.all([
-    supabase.from('contribution').select('*', { count: 'exact', head: true }).eq('source', 'hawaii_csc'),
-    supabase.from('contribution').select('*', { count: 'exact', head: true }).eq('source', 'fec'),
-    supabase.from('lobbyist_registration').select('*', { count: 'exact', head: true }),
-    supabase.from('puc_docket').select('*', { count: 'exact', head: true }),
+  const [cscCount, fecCount, lobbyist, dockets, personCount] = await Promise.all([
+    supabase.from('contribution').select('id', { count: 'exact', head: true }).eq('source', 'hawaii_csc'),
+    supabase.from('contribution').select('id', { count: 'exact', head: true }).eq('source', 'fec'),
+    supabase.from('lobbyist_registration').select('id', { count: 'exact', head: true }),
+    supabase.from('puc_docket').select('id', { count: 'exact', head: true }),
+    supabase.from('person').select('id', { count: 'exact', head: true }),
   ])
 
   const bySource: Record<string, number> = {}
@@ -134,6 +135,13 @@ export async function GET(request: NextRequest) {
     contributions: { total, by_source: bySource },
     lobbyist_registrations: lobbyist.count ?? 0,
     puc_dockets: dockets.count ?? 0,
+    persons: personCount.count ?? 0,
+    _debug: {
+      csc_count_raw: cscCount.count,
+      csc_error: cscCount.error?.message || null,
+      fec_count_raw: fecCount.count,
+      fec_error: fecCount.error?.message || null,
+    },
   })
 }
 
