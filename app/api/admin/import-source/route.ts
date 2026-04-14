@@ -46,13 +46,13 @@ async function previewCSC() {
   const sourceTotal = countData?.result?.total ?? 0
 
   const supabase = createAdminClient()
-  const { count } = await supabase.from('contribution').select('*', { count: 'exact', head: true }).eq('source', 'hawaii_csc')
+  const { count } = await supabase.from('contribution').select('id', { count: 'exact', head: true }).eq('source', 'hawaii_csc')
   return { source_total: sourceTotal, db_count: count ?? 0, delta: sourceTotal - (count ?? 0) }
 }
 
 async function previewFEC() {
   const supabase = createAdminClient()
-  const { count: dbCount } = await supabase.from('contribution').select('*', { count: 'exact', head: true }).eq('source', 'fec')
+  const { count: dbCount } = await supabase.from('contribution').select('id', { count: 'exact', head: true }).eq('source', 'fec')
 
   let sourceTotal = 0
   const committees = [
@@ -86,13 +86,13 @@ async function previewLobbyist() {
   const sourceTotal = countData?.result?.total ?? 0
 
   const supabase = createAdminClient()
-  const { count } = await supabase.from('lobbyist_registration').select('*', { count: 'exact', head: true })
+  const { count } = await supabase.from('lobbyist_registration').select('id', { count: 'exact', head: true })
   return { source_total: sourceTotal, db_count: count ?? 0, delta: sourceTotal - (count ?? 0) }
 }
 
 async function previewPUC() {
   const supabase = createAdminClient()
-  const { count } = await supabase.from('puc_docket').select('*', { count: 'exact', head: true })
+  const { count } = await supabase.from('puc_docket').select('id', { count: 'exact', head: true })
   return { source_total: 6, db_count: count ?? 0, delta: 6 - (count ?? 0), note: 'No public API — using curated docket list' }
 }
 
@@ -136,12 +136,6 @@ export async function GET(request: NextRequest) {
     lobbyist_registrations: lobbyist.count ?? 0,
     puc_dockets: dockets.count ?? 0,
     persons: personCount.count ?? 0,
-    _debug: {
-      csc_count_raw: cscCount.count,
-      csc_error: cscCount.error?.message || null,
-      fec_count_raw: fecCount.count,
-      fec_error: fecCount.error?.message || null,
-    },
   })
 }
 
