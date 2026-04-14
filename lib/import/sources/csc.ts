@@ -64,8 +64,39 @@ export async function importCSCBatch(
   const personMap = await ensurePersons(supabase, personEntries)
   const personsCreated = personMap.size
 
+  // Dedup: check which CKAN _ids already exist in DB
+  const ckanIds = records.map(r => Number(r['_id'])).filter(Boolean)
+  const existingIds = new Set<number>()
+
+  for (let i = 0; i < ckanIds.length; i += 500) {
+    const batch = ckanIds.slice(i, i + 500)
+    // Query raw_record->>'_id' for existing records
+    const { data: existing } = await supabase
+      .from('contribution')
+      .select('raw_record')
+      .eq('source', 'hawaii_csc')
+      .in('raw_record->>_id', batch.map(String))
+
+    for (const row of existing || []) {
+      const id = Number(row.raw_record?._id)
+      if (id) existingIds.add(id)
+    }
+  }
+
+  // Filter out records that already exist
+  const newRecords = records.filter(r => !existingIds.has(Number(r['_id'])))
+
+  if (newRecords.length === 0) {
+    return {
+      inserted: 0,
+      nextOffset: offset + records.length,
+      done: records.length < limit,
+      personsCreated,
+    }
+  }
+
   // Build contribution records with linked person IDs
-  const contributions = records.map((row) => {
+  const contributions = newRecords.map((row) => {
     const candidateName = row['Candidate Name'] || row['candidate_name'] || ''
     const donorName = row['Contributor Name'] || row['contributor_name'] || ''
 

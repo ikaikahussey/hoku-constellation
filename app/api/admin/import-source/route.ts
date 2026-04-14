@@ -118,20 +118,20 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = createAdminClient()
-  const [contributions, lobbyist, dockets] = await Promise.all([
-    supabase.from('contribution').select('source', { count: 'exact' }),
+  const [cscCount, fecCount, lobbyist, dockets] = await Promise.all([
+    supabase.from('contribution').select('*', { count: 'exact', head: true }).eq('source', 'hawaii_csc'),
+    supabase.from('contribution').select('*', { count: 'exact', head: true }).eq('source', 'fec'),
     supabase.from('lobbyist_registration').select('*', { count: 'exact', head: true }),
     supabase.from('puc_docket').select('*', { count: 'exact', head: true }),
   ])
 
-  const contribBySource: Record<string, number> = {}
-  for (const row of contributions.data || []) {
-    const src = row.source || 'unknown'
-    contribBySource[src] = (contribBySource[src] || 0) + 1
-  }
+  const bySource: Record<string, number> = {}
+  if (cscCount.count) bySource['hawaii_csc'] = cscCount.count
+  if (fecCount.count) bySource['fec'] = fecCount.count
+  const total = (cscCount.count ?? 0) + (fecCount.count ?? 0)
 
   return NextResponse.json({
-    contributions: { total: contributions.count ?? 0, by_source: contribBySource },
+    contributions: { total, by_source: bySource },
     lobbyist_registrations: lobbyist.count ?? 0,
     puc_dockets: dockets.count ?? 0,
   })
