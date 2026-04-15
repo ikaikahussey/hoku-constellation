@@ -42,3 +42,8 @@ next-env.d.ts
 
 # supabase
 supabase/.temp/
+
+# workers
+workers/.env
+workers/logs/
+workers/dist/
