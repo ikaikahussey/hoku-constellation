@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import Pagination from '@/components/admin/Pagination'
 
 export default async function AdminPersonList({
   searchParams,
@@ -108,21 +109,14 @@ export default async function AdminPersonList({
         </table>
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 mt-6">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-            <Link
-              key={p}
-              href={`/admin/person?q=${query}&page=${p}`}
-              className={`px-3 py-1.5 rounded text-sm ${
-                p === page ? 'bg-gold text-navy font-semibold' : 'text-white/50 hover:text-white'
-              }`}
-            >
-              {p}
-            </Link>
-          ))}
-        </div>
-      )}
+      <Pagination
+        currentPage={page}
+        totalPages={totalPages}
+        totalCount={count ?? 0}
+        perPage={perPage}
+        basePath="/admin/person"
+        searchParams={{ q: query || undefined }}
+      />
     </div>
   )
 }
