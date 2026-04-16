@@ -32,6 +32,14 @@ export function OrgHeader({ org, relationshipCount }: OrgHeaderProps) {
               </a>
             ) : null}
           </div>
+          {(org.ein || org.dcca_file_number || org.sec_cik || org.fec_committee_id) ? (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-xs text-white/30">
+              {org.ein ? <span>EIN: {String(org.ein)}</span> : null}
+              {org.dcca_file_number ? <span>DCCA: {String(org.dcca_file_number)}</span> : null}
+              {org.sec_cik ? <span>SEC CIK: {String(org.sec_cik)}</span> : null}
+              {org.fec_committee_id ? <span>FEC: {String(org.fec_committee_id)}</span> : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
