@@ -1,53 +1,49 @@
+import Image from 'next/image'
 import { Badge } from '@/components/ui/Badge'
+import type { EntityRow } from '@/lib/db/types'
+import { attr, attrList } from './edges'
 
 interface PersonHeaderProps {
-  person: Record<string, unknown>
-  relationshipCount: number
+  person: EntityRow
+  connectionCount: number
 }
 
-export function PersonHeader({ person, relationshipCount }: PersonHeaderProps) {
+export function PersonHeader({ person, connectionCount }: PersonHeaderProps) {
+  const officeHeld = attr(person, 'office_held')
+  const party = attr(person, 'party')
+  const district = attr(person, 'district')
+  const island = attr(person, 'island')
+  const status = attr(person, 'status')
+  const photo = attr(person, 'photo_url')
+  const website = attr(person, 'website_url')
+  const entityTypes = attrList(person, 'entity_types')
+  const subtitle = [officeHeld, party, district].filter(Boolean).join(' · ')
+
   return (
-    <div className="mb-8">
+    <header className="mb-8 pb-8 border-b border-ink">
       <div className="flex items-start gap-6">
-        <div className="w-20 h-20 rounded-full bg-navy-light border border-white/10 flex items-center justify-center flex-shrink-0">
-          {person.photo_url ? (
-            <img src={person.photo_url as string} alt="" className="w-20 h-20 rounded-full object-cover" />
+        <div className="w-20 h-20 border border-ink flex items-center justify-center flex-shrink-0 overflow-hidden bg-gray-100">
+          {photo ? (
+            <Image src={photo} alt="" width={80} height={80} unoptimized className="w-20 h-20 object-cover" />
           ) : (
-            <svg className="w-10 h-10 text-white/20" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-            </svg>
+            <span className="text-3xl font-bold" aria-hidden="true">{person.name.charAt(0)}</span>
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <h1 className="text-3xl font-bold text-white">{person.full_name as string}</h1>
-          <div className="flex flex-wrap items-center gap-2 mt-2">
-            {person.office_held ? (
-              <span className="text-gold">{String(person.office_held)}</span>
-            ) : null}
-            {person.party ? <span className="text-white/40">·</span> : null}
-            {person.party ? <span className="text-white/50">{String(person.party)}</span> : null}
-            {person.district ? <span className="text-white/40">·</span> : null}
-            {person.district ? <span className="text-white/50">{String(person.district)}</span> : null}
-          </div>
+          <p className="text-xs text-muted uppercase tracking-wide mb-1">Person</p>
+          <h1 className="text-3xl sm:text-4xl font-bold">{person.name}</h1>
+          {subtitle && <p className="mt-2 text-lg">{subtitle}</p>}
           <div className="flex flex-wrap gap-1.5 mt-3">
-            {((person.entity_types as string[]) || []).map((type) => (
-              <Badge key={type} variant="gold">{type.replace(/_/g, ' ')}</Badge>
-            ))}
-            {person.island ? <Badge variant="outline">{String(person.island)}</Badge> : null}
-            <Badge variant={person.status === 'active' ? 'success' : 'default'}>
-              {person.status as string}
-            </Badge>
+            {entityTypes.map(type => <Badge key={type} variant="outline">{type.replace(/_/g, ' ')}</Badge>)}
+            {island && <Badge variant="muted">{island}</Badge>}
+            {status && <Badge variant={status === 'active' ? 'solid' : 'muted'}>{status}</Badge>}
           </div>
-          <div className="flex items-center gap-6 mt-4 text-sm text-white/40">
-            <span>{relationshipCount} connection{relationshipCount !== 1 ? 's' : ''}</span>
-            {person.website_url ? (
-              <a href={String(person.website_url)} target="_blank" rel="noopener noreferrer" className="text-gold/60 hover:text-gold">
-                Website
-              </a>
-            ) : null}
+          <div className="flex items-center gap-6 mt-4 text-sm text-muted tabular">
+            <span>{connectionCount} connection{connectionCount !== 1 ? 's' : ''}</span>
+            {website && <a href={website} target="_blank" rel="noopener noreferrer">Website</a>}
           </div>
         </div>
       </div>
-    </div>
+    </header>
   )
 }

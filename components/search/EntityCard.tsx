@@ -1,56 +1,58 @@
 import Link from 'next/link'
+import { Badge } from '@/components/ui/Badge'
+import type { EntityKind } from '@/lib/db/types'
 
-interface EntityCardProps {
+export interface EntityCardProps {
   id: string
-  type: 'person' | 'organization'
+  kind: EntityKind
   name: string
   slug: string | null
   subtitle: string | null
   badges: string[]
   island: string | null
-  status: string
+  status: string | null
 }
 
-export function EntityCard({ type, name, slug, subtitle, badges, island, status }: EntityCardProps) {
-  const href = type === 'person' ? `/person/${slug}` : `/org/${slug}`
+const KIND_LABEL: Record<EntityKind, string> = {
+  person: 'Person',
+  org: 'Organization',
+  bill: 'Bill',
+  docket: 'Docket',
+  parcel: 'Parcel',
+  office: 'Office',
+}
 
-  return (
-    <Link href={href} className="block">
-      <div className="bg-navy-light rounded-lg border border-white/10 p-4 hover:border-gold/30 transition-colors">
-        <div className="flex items-start justify-between">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${type === 'person' ? 'bg-gold' : 'bg-ocean'}`} />
-              <h3 className="text-white font-medium truncate">{name}</h3>
-            </div>
-            {subtitle && (
-              <p className="text-sm text-white/50 ml-4">{subtitle}</p>
-            )}
-            <div className="flex flex-wrap gap-1.5 mt-2 ml-4">
-              {badges.map((badge) => (
-                <span
-                  key={badge}
-                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${
-                    type === 'person'
-                      ? 'bg-gold/10 text-gold/80'
-                      : 'bg-ocean/20 text-white/70'
-                  }`}
-                >
-                  {badge.replace(/_/g, ' ')}
-                </span>
-              ))}
-              {island && (
-                <span className="inline-flex items-center rounded-full bg-white/5 px-2 py-0.5 text-xs text-white/40">
-                  {island}
-                </span>
-              )}
-            </div>
-          </div>
-          <span className={`text-xs flex-shrink-0 ${status === 'active' ? 'text-green-400/70' : 'text-white/30'}`}>
-            {status}
-          </span>
+/** Public URL for an entity, or null when the kind has no page yet. */
+export function entityHref(kind: EntityKind | string | null, slug: string | null, id: string): string | null {
+  if (kind === 'person' && slug) return `/person/${slug}`
+  if (kind === 'org' && slug) return `/org/${slug}`
+  if (kind === 'bill') return `/bills/${id}`
+  return null
+}
+
+export function EntityCard({ id, kind, name, slug, subtitle, badges, island, status }: EntityCardProps) {
+  const href = entityHref(kind, slug, id)
+  const body = (
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-xs text-muted uppercase tracking-wide">{KIND_LABEL[kind] ?? kind}</span>
         </div>
+        <h3 className="text-lg font-bold truncate">
+          {href ? <Link href={href}>{name}</Link> : name}
+        </h3>
+        {subtitle && <p className="text-sm text-muted">{subtitle}</p>}
+        {(badges.length > 0 || island) && (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {badges.map(badge => (
+              <Badge key={badge} variant={kind === 'person' ? 'outline' : 'default'}>{badge.replace(/_/g, ' ')}</Badge>
+            ))}
+            {island && <Badge variant="muted">{island}</Badge>}
+          </div>
+        )}
       </div>
-    </Link>
+      {status && <span className="text-xs text-muted flex-shrink-0">{status}</span>}
+    </div>
   )
+  return <div className="card bg-paper border border-rule p-4 hover:border-ink transition-colors">{body}</div>
 }

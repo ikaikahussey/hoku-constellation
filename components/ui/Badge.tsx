@@ -1,4 +1,4 @@
-type BadgeVariant = 'default' | 'gold' | 'ocean' | 'success' | 'error' | 'outline'
+type BadgeVariant = 'default' | 'solid' | 'outline' | 'muted'
 
 interface BadgeProps {
   children: React.ReactNode
@@ -7,17 +7,15 @@ interface BadgeProps {
 }
 
 const variantStyles: Record<BadgeVariant, string> = {
-  default: 'bg-white/10 text-white/80',
-  gold: 'bg-gold/20 text-gold-light',
-  ocean: 'bg-ocean/30 text-white/90',
-  success: 'bg-success/20 text-green-300',
-  error: 'bg-error/20 text-red-300',
-  outline: 'border border-white/20 text-white/60',
+  default: 'border border-rule text-ink',
+  solid: 'bg-ink text-paper border border-ink',
+  outline: 'border border-ink text-ink',
+  muted: 'border border-rule text-muted',
 }
 
 export function Badge({ children, variant = 'default', className = '' }: BadgeProps) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${variantStyles[variant]} ${className}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 text-xs font-bold uppercase tracking-wide ${variantStyles[variant]} ${className}`}>
       {children}
     </span>
   )

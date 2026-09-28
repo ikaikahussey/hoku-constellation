@@ -1,84 +1,70 @@
 'use client'
 
-import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { Suspense, useState } from 'react'
 import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { getAuthClient } from '@/lib/db/browser'
+import { AuthShell, FormError } from '@/components/auth/AuthShell'
+import { Input } from '@/components/ui/Input'
+import { Button } from '@/components/ui/Button'
 
-export default function LoginPage() {
+function safeNext(next: string | null): string {
+  return next && next.startsWith('/') && !next.startsWith('//') ? next : '/search'
+}
+
+function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const next = safeNext(searchParams.get('next'))
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
+  const [error, setError] = useState(searchParams.get('error') ? 'Sign-in failed. Please try again.' : '')
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError('')
-
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-
+    const { error } = await getAuthClient().signIn.email({ email, password })
     if (error) {
-      setError(error.message)
+      setError(error.message ?? 'Sign-in failed.')
       setLoading(false)
       return
     }
-
-    router.push('/search')
+    router.push(next)
     router.refresh()
   }
 
+  async function handleGoogle() {
+    setError('')
+    const callbackURL = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
+    const { error } = await getAuthClient().signIn.social({ provider: 'google', callbackURL })
+    if (error) setError(error.message ?? 'Google sign-in failed.')
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 mb-6">
-            <span className="text-lg font-bold text-white">HOKU</span>
-            <span className="text-lg font-light text-white/80 tracking-wider">CONSTELLATION</span>
-          </Link>
-          <h1 className="text-2xl font-bold text-white">Log in</h1>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="bg-error/10 border border-error/30 rounded-md p-3 text-sm text-red-300">{error}</div>
-          )}
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Email</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy-light px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Password</label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy-light px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-gold text-navy py-2.5 rounded-md font-semibold hover:bg-gold-light transition-colors disabled:opacity-50"
-          >
-            {loading ? 'Logging in...' : 'Log in'}
-          </button>
-        </form>
-
-        <p className="mt-6 text-center text-sm text-white/40">
-          Don&apos;t have an account?{' '}
-          <Link href="/auth/signup" className="text-gold hover:text-gold-light">Sign up</Link>
-        </p>
+    <>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <FormError message={error} />
+        <Input label="Email" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} />
+        <Input label="Password" type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} />
+        <Button type="submit" loading={loading} className="w-full">Log in</Button>
+      </form>
+      <div className="my-4 flex items-center gap-3 text-xs text-muted" aria-hidden="true">
+        <span className="flex-1 border-t border-rule" />or<span className="flex-1 border-t border-rule" />
       </div>
-    </div>
+      <Button type="button" variant="secondary" className="w-full" onClick={handleGoogle}>Continue with Google</Button>
+      <p className="mt-4 text-center text-sm"><Link href="/auth/reset-password">Forgot your password?</Link></p>
+    </>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <AuthShell title="Log in" footer={<>Don&apos;t have an account? <Link href="/auth/signup">Sign up</Link></>}>
+      <Suspense fallback={null}>
+        <LoginForm />
+      </Suspense>
+    </AuthShell>
   )
 }

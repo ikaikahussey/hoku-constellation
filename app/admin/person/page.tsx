@@ -1,122 +1,79 @@
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
+import { getServiceDb } from '@/lib/db/service'
+import { listEntities } from '@/lib/db/queries'
 import Pagination from '@/components/admin/Pagination'
+import { formatDate, humanize } from '@/components/admin/format'
+import { buttonClass } from '@/components/ui/Button'
+import { inputClass } from '@/components/ui/Input'
 
-export default async function AdminPersonList({
-  searchParams,
-}: {
-  searchParams: Promise<{ q?: string; page?: string }>
-}) {
+export const dynamic = 'force-dynamic'
+
+function str(v: unknown): string { return typeof v === 'string' ? v : '' }
+
+export default async function AdminPersonList({ searchParams }: { searchParams: Promise<{ q?: string; page?: string }> }) {
   const params = await searchParams
-  const query = params.q || ''
-  const page = parseInt(params.page || '1')
+  const query = params.q?.trim() || ''
+  const page = Math.max(1, parseInt(params.page || '1', 10) || 1)
   const perPage = 25
   const offset = (page - 1) * perPage
 
-  const supabase = await createClient()
-
-  let dbQuery = supabase
-    .from('person')
-    .select('id, full_name, slug, entity_types, office_held, island, status, updated_at', { count: 'exact' })
-    .order('updated_at', { ascending: false })
-    .range(offset, offset + perPage - 1)
-
-  if (query) {
-    dbQuery = dbQuery.ilike('full_name', `%${query}%`)
-  }
-
-  const { data: people, count } = await dbQuery
-  const totalPages = Math.ceil((count || 0) / perPage)
+  const db = await getServiceDb()
+  const { rows, total } = await listEntities(db, { kind: 'person', q: query || undefined, limit: perPage, offset, orderBy: 'updated_at' })
+  const totalPages = Math.max(1, Math.ceil(total / perPage))
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">People</h1>
-        <Link
-          href="/admin/person/new"
-          className="bg-gold text-navy px-4 py-2 rounded-md text-sm font-semibold hover:bg-gold-light transition-colors"
-        >
-          + Add Person
-        </Link>
+      <div className="flex items-center justify-between gap-4 mb-6">
+        <h1 className="text-2xl font-bold">People</h1>
+        <Link href="/admin/person/new" className={buttonClass('primary', 'md')}>+ Add person</Link>
       </div>
 
-      <form className="mb-6">
-        <input
-          type="text"
-          name="q"
-          defaultValue={query}
-          placeholder="Search people..."
-          className="w-full max-w-md rounded-md border border-white/20 bg-navy px-4 py-2 text-white placeholder-white/40 focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-        />
+      <form className="mb-6 flex gap-2 max-w-md" role="search">
+        <input type="search" name="q" defaultValue={query} placeholder="Search people by name or alias…" aria-label="Search people" className={inputClass} />
+        <button type="submit" className={buttonClass('secondary', 'md')}>Search</button>
       </form>
 
-      <div className="bg-navy-light rounded-lg border border-white/10 overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto border border-rule">
+        <table className="w-full text-sm tabular">
           <thead>
-            <tr className="border-b border-white/10">
-              <th className="text-left py-3 px-4 text-white/50 font-medium">Name</th>
-              <th className="text-left py-3 px-4 text-white/50 font-medium">Type</th>
-              <th className="text-left py-3 px-4 text-white/50 font-medium">Office</th>
-              <th className="text-left py-3 px-4 text-white/50 font-medium">Island</th>
-              <th className="text-left py-3 px-4 text-white/50 font-medium">Status</th>
-              <th className="text-left py-3 px-4 text-white/50 font-medium">Updated</th>
-              <th className="py-3 px-4"></th>
+            <tr className="border-b border-ink">
+              <th scope="col" className="py-2 px-3 text-left text-xs font-bold uppercase tracking-wide">Name</th>
+              <th scope="col" className="py-2 px-3 text-left text-xs font-bold uppercase tracking-wide">Types</th>
+              <th scope="col" className="py-2 px-3 text-left text-xs font-bold uppercase tracking-wide">Office</th>
+              <th scope="col" className="py-2 px-3 text-left text-xs font-bold uppercase tracking-wide">Island</th>
+              <th scope="col" className="py-2 px-3 text-left text-xs font-bold uppercase tracking-wide">Status</th>
+              <th scope="col" className="py-2 px-3 text-left text-xs font-bold uppercase tracking-wide">Updated</th>
+              <th scope="col" className="py-2 px-3"><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody>
-            {people && people.length > 0 ? (
-              people.map((person) => (
-                <tr key={person.id} className="border-b border-white/5 hover:bg-white/5">
-                  <td className="py-3 px-4 font-medium">
-                    <Link href={`/admin/person/${person.id}`} className="text-white hover:text-gold">
-                      {person.full_name}
-                    </Link>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex flex-wrap gap-1">
-                      {(person.entity_types || []).slice(0, 2).map((t: string) => (
-                        <span key={t} className="inline-flex items-center rounded-full bg-gold/10 px-2 py-0.5 text-xs text-gold">
-                          {t.replace(/_/g, ' ')}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-white/60">{person.office_held || '—'}</td>
-                  <td className="py-3 px-4 text-white/60">{person.island || '—'}</td>
-                  <td className="py-3 px-4">
-                    <span className={`text-xs ${person.status === 'active' ? 'text-green-400' : 'text-white/40'}`}>
-                      {person.status}
+            {rows.length > 0 ? rows.map(p => {
+              const a = p.attributes
+              const types = Array.isArray(a.entity_types) ? (a.entity_types as string[]) : []
+              return (
+                <tr key={p.id} className="border-b border-rule">
+                  <td className="py-2 px-3 font-bold"><Link href={`/admin/person/${p.id}`}>{p.name}</Link></td>
+                  <td className="py-2 px-3">
+                    <span className="flex flex-wrap gap-1">
+                      {types.slice(0, 2).map(t => <span key={t} className="border border-rule px-2 py-0.5 text-xs">{humanize(t)}</span>)}
+                      {types.length > 2 && <span className="text-xs text-muted">+{types.length - 2}</span>}
                     </span>
                   </td>
-                  <td className="py-3 px-4 text-white/40 text-xs">
-                    {person.updated_at ? new Date(person.updated_at).toLocaleDateString() : '—'}
-                  </td>
-                  <td className="py-3 px-4">
-                    <Link href={`/admin/person/${person.id}/edit`} className="text-gold/70 hover:text-gold text-sm">
-                      Edit
-                    </Link>
-                  </td>
+                  <td className="py-2 px-3 text-muted">{str(a.office_held) || '—'}</td>
+                  <td className="py-2 px-3 text-muted">{str(a.island) || '—'}</td>
+                  <td className={`py-2 px-3 text-xs ${str(a.status) === 'active' ? 'font-bold' : 'text-muted'}`}>{str(a.status) || '—'}</td>
+                  <td className="py-2 px-3 text-xs text-muted whitespace-nowrap">{formatDate(p.updated_at)}</td>
+                  <td className="py-2 px-3 text-right"><Link href={`/admin/person/${p.id}/edit`} className="text-sm">Edit</Link></td>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={7} className="py-12 text-center text-white/40">
-                  {query ? 'No people found matching your search.' : 'No people yet. Add one to get started.'}
-                </td>
-              </tr>
+              )
+            }) : (
+              <tr><td colSpan={7} className="py-12 text-center text-muted">{query ? 'No people match your search.' : 'No people yet. Add one to get started.'}</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
-      <Pagination
-        currentPage={page}
-        totalPages={totalPages}
-        totalCount={count ?? 0}
-        perPage={perPage}
-        basePath="/admin/person"
-        searchParams={{ q: query || undefined }}
-      />
+      <Pagination currentPage={page} totalPages={totalPages} totalCount={total} perPage={perPage} basePath="/admin/person" searchParams={{ q: query || undefined }} />
     </div>
   )
 }

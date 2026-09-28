@@ -1,328 +1,154 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createEntity, updateEntity } from '@/app/admin/actions'
 import { slugify } from '@/lib/slugify'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
+import { Textarea } from '@/components/ui/Textarea'
+import type { EntityRow } from '@/lib/db/types'
 
 const ENTITY_TYPES = [
   'elected_official', 'appointed_official', 'lobbyist', 'donor', 'contractor',
   'nonprofit_leader', 'business_leader', 'labor_leader', 'university_admin',
   'media_figure', 'cultural_practitioner', 'legal_professional', 'other',
 ]
-
 const ISLANDS = ['Oahu', 'Maui', 'Hawaii', 'Kauai', 'Molokai', 'Lanai', 'Niihau', 'Statewide']
 const PARTIES = ['Democrat', 'Republican', 'Green', 'Libertarian', 'Nonpartisan', 'Independent']
 const STATUSES = ['active', 'inactive', 'deceased', 'former']
-const VISIBILITIES = ['public', 'gated']
 
-interface PersonFormProps {
-  person?: Record<string, unknown>
-}
+const opts = (xs: string[]) => xs.map(x => ({ value: x, label: x.replace(/_/g, ' ') }))
+
+interface PersonFormProps { person?: EntityRow }
+
+function s(v: unknown): string { return typeof v === 'string' ? v : '' }
 
 export function PersonForm({ person }: PersonFormProps) {
   const router = useRouter()
-  const [saving, setSaving] = useState(false)
+  const a = person?.attributes ?? {}
+  const [pending, start] = useTransition()
   const [error, setError] = useState('')
-
-  const [formData, setFormData] = useState({
-    full_name: (person?.full_name as string) || '',
-    first_name: (person?.first_name as string) || '',
-    last_name: (person?.last_name as string) || '',
-    slug: (person?.slug as string) || '',
-    aliases: ((person?.aliases as string[]) || []).join(', '),
-    entity_types: (person?.entity_types as string[]) || [],
-    office_held: (person?.office_held as string) || '',
-    party: (person?.party as string) || '',
-    district: (person?.district as string) || '',
-    island: (person?.island as string) || '',
-    term_start: (person?.term_start as string) || '',
-    term_end: (person?.term_end as string) || '',
-    bio_summary: (person?.bio_summary as string) || '',
-    photo_url: (person?.photo_url as string) || '',
-    website_url: (person?.website_url as string) || '',
-    status: (person?.status as string) || 'active',
-    is_featured: (person?.is_featured as boolean) || false,
-    visibility: (person?.visibility as string) || 'gated',
+  const [form, setForm] = useState({
+    name: person?.name ?? '',
+    first_name: s(a.first_name),
+    last_name: s(a.last_name),
+    slug: s(a.slug),
+    aliases: (person?.aliases ?? []).join(', '),
+    entity_types: Array.isArray(a.entity_types) ? (a.entity_types as string[]) : [],
+    office_held: s(a.office_held),
+    party: s(a.party),
+    district: s(a.district),
+    island: s(a.island),
+    term_start: s(a.term_start),
+    term_end: s(a.term_end),
+    bio_summary: s(a.bio_summary),
+    photo_url: s(a.photo_url),
+    website_url: s(a.website_url),
+    status: s(a.status) || 'active',
+    is_featured: a.is_featured === true,
+    visibility: s(a.visibility) || 'gated',
   })
 
-  function updateField(field: string, value: unknown) {
-    setFormData((prev) => ({ ...prev, [field]: value }))
-    if (field === 'full_name' && !person) {
-      setFormData((prev) => ({ ...prev, slug: slugify(value as string) }))
-    }
+  function set<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
+    setForm(prev => {
+      const next = { ...prev, [k]: v }
+      if (k === 'name' && !person) next.slug = slugify(String(v))
+      return next
+    })
   }
 
-  function toggleEntityType(type: string) {
-    setFormData((prev) => ({
-      ...prev,
-      entity_types: prev.entity_types.includes(type)
-        ? prev.entity_types.filter((t) => t !== type)
-        : [...prev.entity_types, type],
-    }))
+  function toggleType(t: string) {
+    set('entity_types', form.entity_types.includes(t) ? form.entity_types.filter(x => x !== t) : [...form.entity_types, t])
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setSaving(true)
     setError('')
-
-    const supabase = createClient()
-    const payload = {
-      ...formData,
-      aliases: formData.aliases
-        .split(',')
-        .map((a) => a.trim())
-        .filter(Boolean),
-      term_start: formData.term_start || null,
-      term_end: formData.term_end || null,
+    const fd = new FormData()
+    for (const [k, v] of Object.entries(form)) {
+      if (k === 'entity_types') { for (const t of v as string[]) fd.append('entity_types', t); continue }
+      if (k === 'is_featured') { if (v) fd.set('is_featured', 'on'); continue }
+      fd.set(k, String(v))
     }
-
-    if (person) {
-      const { error: err } = await supabase
-        .from('person')
-        .update({ ...payload, updated_at: new Date().toISOString() })
-        .eq('id', person.id)
-      if (err) {
-        setError(err.message)
-        setSaving(false)
-        return
-      }
-    } else {
-      const { error: err } = await supabase.from('person').insert(payload)
-      if (err) {
-        setError(err.message)
-        setSaving(false)
-        return
-      }
-    }
-
-    router.push('/admin/person')
-    router.refresh()
+    start(async () => {
+      const res = person ? await updateEntity(person.id, fd) : await createEntity('person', fd)
+      if (!res.ok) { setError(res.error); return }
+      router.push(`/admin/person/${res.id}`)
+      router.refresh()
+    })
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-3xl space-y-6">
-      {error && (
-        <div className="bg-error/10 border border-error/30 rounded-md p-3 text-sm text-red-300">{error}</div>
-      )}
+    <form onSubmit={submit} className="max-w-3xl space-y-6">
+      {error && <p className="border border-ink p-3 text-sm" role="alert">⚠ {error}</p>}
 
-      <div className="bg-navy-light rounded-lg border border-white/10 p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-white">Basic Information</h2>
-
+      <section className="card bg-paper border border-rule p-6 space-y-4">
+        <h2 className="text-lg font-bold">Basic information</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-white/70 mb-1">Full Name *</label>
-            <input
-              required
-              value={formData.full_name}
-              onChange={(e) => updateField('full_name', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white placeholder-white/40 focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">First Name</label>
-            <input
-              value={formData.first_name}
-              onChange={(e) => updateField('first_name', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Last Name</label>
-            <input
-              value={formData.last_name}
-              onChange={(e) => updateField('last_name', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">URL Slug</label>
-            <input
-              value={formData.slug}
-              onChange={(e) => updateField('slug', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white/60 font-mono text-sm focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Aliases (comma-separated)</label>
-            <input
-              value={formData.aliases}
-              onChange={(e) => updateField('aliases', e.target.value)}
-              placeholder="e.g., Josh, J. Green"
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white placeholder-white/40 focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
+          <div className="md:col-span-2"><Input label="Full name *" required value={form.name} onChange={e => set('name', e.target.value)} /></div>
+          <Input label="First name" value={form.first_name} onChange={e => set('first_name', e.target.value)} />
+          <Input label="Last name" value={form.last_name} onChange={e => set('last_name', e.target.value)} />
+          <Input label="URL slug" value={form.slug} onChange={e => set('slug', e.target.value)} className="font-mono text-sm" />
+          <Input label="Aliases (comma-separated)" value={form.aliases} onChange={e => set('aliases', e.target.value)} placeholder="e.g., Josh, J. Green" />
         </div>
-      </div>
+      </section>
 
-      <div className="bg-navy-light rounded-lg border border-white/10 p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-white">Entity Types</h2>
+      <section className="card bg-paper border border-rule p-6 space-y-4">
+        <h2 className="text-lg font-bold">Entity types</h2>
         <div className="flex flex-wrap gap-2">
-          {ENTITY_TYPES.map((type) => (
-            <button
-              key={type}
-              type="button"
-              onClick={() => toggleEntityType(type)}
-              className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
-                formData.entity_types.includes(type)
-                  ? 'bg-gold/20 text-gold border border-gold/40'
-                  : 'bg-white/5 text-white/50 border border-white/10 hover:border-white/30'
-              }`}
-            >
-              {type.replace(/_/g, ' ')}
-            </button>
-          ))}
+          {ENTITY_TYPES.map(t => {
+            const on = form.entity_types.includes(t)
+            return (
+              <button key={t} type="button" onClick={() => toggleType(t)} aria-pressed={on}
+                className={`btn px-3 py-1.5 text-sm border ${on ? 'bg-ink text-paper border-ink font-bold' : 'bg-paper text-ink border-rule hover:border-ink'}`}>
+                {t.replace(/_/g, ' ')}
+              </button>
+            )
+          })}
         </div>
-      </div>
+      </section>
 
-      <div className="bg-navy-light rounded-lg border border-white/10 p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-white">Office & Political Info</h2>
+      <section className="card bg-paper border border-rule p-6 space-y-4">
+        <h2 className="text-lg font-bold">Office and political information</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-white/70 mb-1">Office Held</label>
-            <input
-              value={formData.office_held}
-              onChange={(e) => updateField('office_held', e.target.value)}
-              placeholder="e.g., Governor, State Senator"
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white placeholder-white/40 focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Party</label>
-            <select
-              value={formData.party}
-              onChange={(e) => updateField('party', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            >
-              <option value="">Select...</option>
-              {PARTIES.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">District</label>
-            <input
-              value={formData.district}
-              onChange={(e) => updateField('district', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Island</label>
-            <select
-              value={formData.island}
-              onChange={(e) => updateField('island', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            >
-              <option value="">Select...</option>
-              {ISLANDS.map((i) => <option key={i} value={i}>{i}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Term Start</label>
-            <input
-              type="date"
-              value={formData.term_start}
-              onChange={(e) => updateField('term_start', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Term End</label>
-            <input
-              type="date"
-              value={formData.term_end}
-              onChange={(e) => updateField('term_end', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
+          <div className="md:col-span-2"><Input label="Office held" value={form.office_held} onChange={e => set('office_held', e.target.value)} placeholder="e.g., Governor, State Senator" /></div>
+          <Select label="Party" value={form.party} onChange={e => set('party', e.target.value)} options={opts(PARTIES)} placeholder="Select…" />
+          <Input label="District" value={form.district} onChange={e => set('district', e.target.value)} />
+          <Select label="Island" value={form.island} onChange={e => set('island', e.target.value)} options={opts(ISLANDS)} placeholder="Select…" />
+          <div />
+          <Input label="Term start" type="date" value={form.term_start} onChange={e => set('term_start', e.target.value)} />
+          <Input label="Term end" type="date" value={form.term_end} onChange={e => set('term_end', e.target.value)} />
         </div>
-      </div>
+      </section>
 
-      <div className="bg-navy-light rounded-lg border border-white/10 p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-white">Bio & Links</h2>
-        <div>
-          <label className="block text-sm font-medium text-white/70 mb-1">Bio Summary (Markdown)</label>
-          <textarea
-            value={formData.bio_summary}
-            onChange={(e) => updateField('bio_summary', e.target.value)}
-            rows={8}
-            className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white placeholder-white/40 font-mono text-sm focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            placeholder="Write a biographical summary in Markdown..."
-          />
-        </div>
+      <section className="card bg-paper border border-rule p-6 space-y-4">
+        <h2 className="text-lg font-bold">Bio and links</h2>
+        <Textarea label="Bio summary (Markdown)" rows={8} value={form.bio_summary} onChange={e => set('bio_summary', e.target.value)} className="font-mono text-sm" placeholder="Write a biographical summary in Markdown…" />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Photo URL</label>
-            <input
-              value={formData.photo_url}
-              onChange={(e) => updateField('photo_url', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Website URL</label>
-            <input
-              value={formData.website_url}
-              onChange={(e) => updateField('website_url', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
+          <Input label="Photo URL" value={form.photo_url} onChange={e => set('photo_url', e.target.value)} />
+          <Input label="Website URL" value={form.website_url} onChange={e => set('website_url', e.target.value)} />
         </div>
-      </div>
+      </section>
 
-      <div className="bg-navy-light rounded-lg border border-white/10 p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-white">Settings</h2>
+      <section className="card bg-paper border border-rule p-6 space-y-4">
+        <h2 className="text-lg font-bold">Settings</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Status</label>
-            <select
-              value={formData.status}
-              onChange={(e) => updateField('status', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            >
-              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Visibility</label>
-            <select
-              value={formData.visibility}
-              onChange={(e) => updateField('visibility', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            >
-              {VISIBILITIES.map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
-          </div>
+          <Select label="Status" value={form.status} onChange={e => set('status', e.target.value)} options={opts(STATUSES)} />
+          <Select label="Visibility" value={form.visibility} onChange={e => set('visibility', e.target.value)} options={opts(['public', 'gated'])} />
           <div className="flex items-end">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.is_featured}
-                onChange={(e) => updateField('is_featured', e.target.checked)}
-                className="rounded border-white/20 bg-navy text-gold focus:ring-gold"
-              />
-              <span className="text-sm text-white/70">Featured</span>
+            <label className="flex items-center gap-2 cursor-pointer text-sm">
+              <input type="checkbox" checked={form.is_featured} onChange={e => set('is_featured', e.target.checked)} className="h-4 w-4 border border-ink accent-ink" />
+              Featured
             </label>
           </div>
         </div>
-      </div>
+      </section>
 
       <div className="flex items-center gap-4">
-        <button
-          type="submit"
-          disabled={saving}
-          className="bg-gold text-navy px-6 py-2.5 rounded-md font-semibold text-sm hover:bg-gold-light transition-colors disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : person ? 'Update Person' : 'Create Person'}
-        </button>
-        <button
-          type="button"
-          onClick={() => router.back()}
-          className="text-sm text-white/50 hover:text-white transition-colors"
-        >
-          Cancel
-        </button>
+        <Button type="submit" loading={pending}>{person ? 'Update person' : 'Create person'}</Button>
+        <Button type="button" variant="ghost" onClick={() => router.back()}>Cancel</Button>
       </div>
     </form>
   )
