@@ -1,0 +1,6 @@
+[
+  {"_id": 1, "Candidate Name": "Green, Josh", "Contributor Name": "Hawaiian Electric Industries", "Contributor Type": "Noncandidate Committee", "Amount": "2000.00", "Date": "2022-03-15T00:00:00", "Election Period": "2018-2022", "Reg No": "CC10529", "Office": "Governor", "Party": "Democrat", "Non-Monetary (Yes Or No)": "N", "Aggregate": "4000.00"},
+  {"_id": 2, "Candidate Name": "Green, Josh", "Contributor Name": "Kauaʻi Coffee Company", "Contributor Type": "Other Entity", "Amount": "1,000", "Date": "2022-04-01T00:00:00", "Election Period": "2018-2022", "Reg No": "CC10529", "Office": "Governor", "Non-Monetary (Yes Or No)": "N"},
+  {"_id": 3, "Candidate Name": "Green, Josh", "Contributor Name": "Doe, Jane", "Contributor Type": "Individual", "Amount": "250.00", "Date": "6/30/2022", "Election Period": "2018-2022", "Reg No": "CC10529", "Office": "Governor", "Employer": "Self", "Occupation": "Attorney", "Non-Monetary (Yes Or No)": "N"},
+  {"_id": 4, "Candidate Name": "", "Contributor Name": "Missing Recipient", "Amount": "10", "Date": "2022-01-01"}
+]

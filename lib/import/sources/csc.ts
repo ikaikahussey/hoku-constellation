@@ -1,193 +1,214 @@
-import { createAdminClient } from '@/lib/supabase/admin'
-import { slugify } from '@/lib/slugify'
-import { ensurePersons, parseName } from '@/lib/import/auto-create'
+/**
+ * Campaign Spending Commission (opendata.hawaii.gov CKAN).
+ *
+ * Datasets: candidate & noncandidate contributions, expenditures, loans. Resource ids are seeded from
+ * the four known ids and completed via package_search; each resource is classified by its fields
+ * (Contributor Name → contribution, Vendor/Payee Name → expenditure, Lender Name → loan).
+ *
+ * Cursor: one row per resource, `csc:<resource_id>`; the aggregate `csc` cursor tracks the sweep.
+ * Idempotent: document checksum = sha256 of the CKAN record; edges dedup on (document, type, names, role).
+ */
+import type { Db } from '@/lib/db/types'
+import { CkanClient, HAWAII_OPEN_DATA } from '../clients/ckan'
+import { processRecord, emptyResult, resolveRef, type BatchResult, type EdgeInput, type ResolvedRef } from '../pipeline'
+import { toIsoDate, toAmount, looksLikeOrg, canonicalPersonName } from '../normalize'
+import type { ImportOptions, SourcePage } from '../types'
+import type { EdgeType } from '@/lib/schema/attributes'
 
-const CKAN_BASE = 'https://opendata.hawaii.gov/api/3/action'
+export const SOURCE_KEY = 'csc'
 
-async function findCSCResourceId(): Promise<string> {
-  const searchRes = await fetch(`${CKAN_BASE}/package_search?q=campaign+contributions+received`)
-  const searchData = await searchRes.json()
-  for (const ds of searchData?.result?.results || []) {
-    for (const r of ds.resources || []) {
-      if (r.format === 'CSV' && (r.name || '').toLowerCase().includes('contribution')) {
-        return r.id
-      }
-    }
-  }
-  // Fallback search
-  const altSearch = await fetch(`${CKAN_BASE}/package_search?q=campaign+spending+commission`)
-  const altData = await altSearch.json()
-  for (const ds of altData?.result?.results || []) {
-    for (const r of ds.resources || []) {
-      if (r.datastore_active) return r.id
-    }
-  }
-  throw new Error('Could not find CSC contributions resource on opendata.hawaii.gov')
+export const KNOWN_RESOURCES = [
+  '443bd998-1ef3-47da-9170-c2c376b2e41c',
+  'bc5fae08-b97e-45fc-9c3b-f0883efad371',
+  'ca3ac02a-eb44-4b44-b3a7-5f60653cc1d3',
+  'f20b548a-83db-46e9-a0de-8bfd777ec89d',
+]
+
+export type CscKind = 'contribution' | 'expenditure' | 'loan'
+
+/** Classify a CSC datastore resource by the presence of well-known columns. */
+export function classifyFields(fields: string[]): CscKind | null {
+  const f = new Set(fields.map(x => x.toLowerCase()))
+  if (f.has('lender name') || f.has('loan amount') || [...f].some(x => x.includes('lender'))) return 'loan'
+  if (f.has('vendor name') || f.has('payee name') || f.has('expenditure category') || [...f].some(x => x.includes('vendor') || x.includes('payee'))) return 'expenditure'
+  if (f.has('contributor name') || f.has('contributor type')) return 'contribution'
+  return null
 }
 
-/**
- * Import a single batch of CSC contribution records.
- * Auto-creates person records for candidates and donors.
- */
-export async function importCSCBatch(
-  offset: number,
-  limit: number
-): Promise<{ inserted: number; nextOffset: number; done: boolean; personsCreated: number }> {
-  const supabase = createAdminClient()
-  const resourceId = await findCSCResourceId()
+const str = (r: Record<string, unknown>, ...keys: string[]) => {
+  for (const k of keys) { const v = r[k]; if (v != null && String(v).trim() !== '') return String(v).trim() }
+  return null
+}
 
-  const url = `${CKAN_BASE}/datastore_search?resource_id=${resourceId}&limit=${limit}&offset=${offset}`
-  const res = await fetch(url)
-  const data = await res.json()
-  const records: Record<string, string>[] = data?.result?.records || []
+export interface CscParsed {
+  kind: CscKind
+  fromName: string
+  toName: string
+  fromIsOrg: boolean
+  toIsOrg: boolean
+  amount: number | null
+  date: string | null
+  role: string | null
+  regNo: string | null
+  attributes: Record<string, unknown>
+  recordId: string
+}
 
-  if (records.length === 0) {
-    return { inserted: 0, nextOffset: offset, done: true, personsCreated: 0 }
-  }
+/** Pure parser for one CKAN record. Returns null for rows that carry no fact. */
+export function parseCscRecord(kind: CscKind, r: Record<string, unknown>): CscParsed | null {
+  const id = str(r, '_id')
+  if (!id) return null
+  const candidate = str(r, 'Candidate Name', 'candidate_name')
+  const committee = str(r, 'Noncandidate Committee Name', 'Committee Name', 'committee_name')
+  const recipient = candidate ?? committee
+  const period = str(r, 'Election Period', 'election_period')
+  const regNo = str(r, 'Reg No', 'reg_no')
+  const office = str(r, 'Office')
+  const base = { election_period: period, office, district: str(r, 'District'), party: str(r, 'Party'), county: str(r, 'County'), source: SOURCE_KEY, reg_no: regNo }
 
-  // Collect unique names for person creation
-  const personEntries: { rawName: string; tag: string }[] = []
-
-  for (const row of records) {
-    const candidateName = row['Candidate Name'] || row['candidate_name'] || ''
-    const donorName = row['Contributor Name'] || row['contributor_name'] || ''
-
-    if (candidateName.trim()) {
-      personEntries.push({ rawName: candidateName, tag: 'elected_official' })
-    }
-    if (donorName.trim()) {
-      personEntries.push({ rawName: donorName, tag: 'donor' })
-    }
-  }
-
-  // Auto-create persons (deduplicates internally)
-  const personMap = await ensurePersons(supabase, personEntries)
-  const personsCreated = personMap.size
-
-  // Dedup: check which CKAN _ids already exist in DB
-  const ckanIds = records.map(r => Number(r['_id'])).filter(Boolean)
-  const existingIds = new Set<number>()
-
-  for (let i = 0; i < ckanIds.length; i += 500) {
-    const batch = ckanIds.slice(i, i + 500)
-    // Query raw_record->>'_id' for existing records
-    const { data: existing } = await supabase
-      .from('contribution')
-      .select('raw_record')
-      .eq('source', 'hawaii_csc')
-      .in('raw_record->>_id', batch.map(String))
-
-    for (const row of existing || []) {
-      const id = Number(row.raw_record?._id)
-      if (id) existingIds.add(id)
-    }
-  }
-
-  // Filter out records that already exist
-  const newRecords = records.filter(r => !existingIds.has(Number(r['_id'])))
-
-  if (newRecords.length === 0) {
+  if (kind === 'contribution') {
+    const donor = str(r, 'Contributor Name', 'contributor_name')
+    if (!donor || !recipient) return null
+    const type = str(r, 'Contributor Type', 'contributor_type')
     return {
-      inserted: 0,
-      nextOffset: offset + records.length,
-      done: records.length < limit,
-      personsCreated,
+      kind, fromName: donor, toName: recipient, fromIsOrg: type ? !/^(individual|candidate|immediate family)/i.test(type) : looksLikeOrg(donor), toIsOrg: !candidate,
+      amount: toAmount(r['Amount'] ?? r['amount']), date: toIsoDate(r['Date'] ?? r['date'] ?? r['Receipt Date']), role: type,
+      regNo, recordId: id,
+      attributes: { ...base, contribution_type: type, non_monetary: /^y/i.test(str(r, 'Non-Monetary (Yes Or No)') ?? 'n'), non_monetary_category: str(r, 'Non-Monetary Category'),
+        employer: str(r, 'Employer'), occupation: str(r, 'Occupation'), contributor_city: str(r, 'City'), contributor_state: str(r, 'State'), aggregate: toAmount(r['Aggregate']) },
     }
   }
-
-  // Build contribution records with linked person IDs
-  const contributions = newRecords.map((row) => {
-    const candidateName = row['Candidate Name'] || row['candidate_name'] || ''
-    const donorName = row['Contributor Name'] || row['contributor_name'] || ''
-
-    const candidateSlug = candidateName.trim() ? slugify(parseName(candidateName).full_name) : ''
-    const donorSlug = donorName.trim() ? slugify(parseName(donorName).full_name) : ''
-
-    const recipientPersonId = candidateSlug ? personMap.get(candidateSlug) || null : null
-    const donorPersonId = donorSlug ? personMap.get(donorSlug) || null : null
-
-    // Parse amount — keep 0 as valid (NOT NULL column)
-    const rawAmount = row['Amount'] || row['amount'] || '0'
-    const amount = parseFloat(String(rawAmount)) || 0
-
-    // Parse date — extract YYYY-MM-DD from timestamp like "2016-06-16T23:43:05"
-    const rawDate = row['Date'] || row['date'] || row['Receipt Date'] || ''
-    const dateMatch = String(rawDate).match(/^\d{4}-\d{2}-\d{2}/)
-    const contributionDate = dateMatch ? dateMatch[0] : null
-
+  if (kind === 'expenditure') {
+    const vendor = str(r, 'Vendor Name', 'Payee Name', 'vendor_name', 'payee_name')
+    if (!vendor || !recipient) return null
+    const category = str(r, 'Expenditure Category', 'Category', 'expenditure_category')
     return {
-      donor_name_raw: donorName || 'Unknown',
-      recipient_name_raw: candidateName || 'Unknown',
-      recipient_person_id: recipientPersonId,
-      donor_person_id: donorPersonId,
-      amount,
-      contribution_date: contributionDate,
-      contribution_type: row['Contributor Type'] || row['contributor_type'] || 'other',
-      election_period: row['Election Period'] || row['election_period'] || null,
-      source: 'hawaii_csc',
-      match_status: recipientPersonId ? 'recipient_matched' : 'unmatched',
-      raw_record: row,
-      source_file: `ckan:${resourceId}`,
-    }
-  })
-
-  // Insert contributions in sub-batches of 200
-  let totalInserted = 0
-  for (let i = 0; i < contributions.length; i += 200) {
-    const batch = contributions.slice(i, i + 200)
-    try {
-      const { data: result, error } = await supabase
-        .from('contribution')
-        .insert(batch)
-        .select('id')
-
-      if (error) throw error
-      totalInserted += (result || []).length
-    } catch {
-      // Try individual inserts on batch failure
-      for (const row of batch) {
-        try {
-          const { error } = await supabase.from('contribution').insert(row)
-          if (!error) totalInserted++
-        } catch {
-          // skip
-        }
-      }
+      kind, fromName: recipient, toName: vendor, fromIsOrg: !candidate, toIsOrg: looksLikeOrg(vendor),
+      amount: toAmount(r['Amount'] ?? r['amount']), date: toIsoDate(r['Date'] ?? r['date'] ?? r['Expenditure Date']), role: category,
+      regNo, recordId: id,
+      attributes: { ...base, purpose: str(r, 'Purpose of Expenditure', 'Purpose'), vendor_type: str(r, 'Vendor Type'), authorized_use: str(r, 'Authorized Use') },
     }
   }
-
+  const lender = str(r, 'Lender Name', 'lender_name')
+  if (!lender || !recipient) return null
   return {
-    inserted: totalInserted,
-    nextOffset: offset + records.length,
-    done: records.length < limit,
-    personsCreated,
+    kind, fromName: lender, toName: recipient, fromIsOrg: looksLikeOrg(lender), toIsOrg: !candidate,
+    amount: toAmount(r['Amount'] ?? r['Loan Amount'] ?? r['amount']), date: toIsoDate(r['Date'] ?? r['Loan Date'] ?? r['date']), role: str(r, 'Loan Type', 'Lender Type'),
+    regNo, recordId: id,
+    attributes: { ...base, interest_rate: toAmount(r['Interest Rate']), balance: toAmount(r['Outstanding Balance']) },
   }
 }
 
+const EDGE_FOR: Record<CscKind, EdgeType> = { contribution: 'contributed_to', expenditure: 'spent_with', loan: 'loaned_to' }
+const DOC_FOR: Record<CscKind, 'contribution' | 'expenditure' | 'loan'> = { contribution: 'contribution', expenditure: 'expenditure', loan: 'loan' }
+
+async function refFor(db: Db, name: string, isOrg: boolean, opts: { candidate?: boolean; regNo?: string | null }): Promise<ResolvedRef> {
+  if (opts.candidate) {
+    // Candidates are authoritative names from the Commission: create as persons with the CSC registration number.
+    return resolveRef(db, { kind: 'person', rawName: name, canonicalName: canonicalPersonName(name), identifiers: opts.regNo ? { csc_reg_no: opts.regNo } : undefined,
+      createIfMissing: true, attributes: { entity_types: ['person', 'candidate'] } })
+  }
+  if (isOrg) {
+    const committee = opts.regNo && /^NC/i.test(opts.regNo)
+    return resolveRef(db, { kind: 'org', rawName: name, identifiers: committee ? { csc_reg_no: opts.regNo! } : undefined, createIfMissing: !!committee,
+      attributes: committee ? { org_type: 'pac' } : undefined })
+  }
+  return resolveRef(db, { kind: 'person', rawName: name, canonicalName: canonicalPersonName(name) })
+}
+
+export function planEdges(kind: CscKind, p: CscParsed, from: ResolvedRef, to: ResolvedRef): EdgeInput[] {
+  return [{ type: EDGE_FOR[kind], from, to, role: p.role, amount: p.amount, start_date: p.date, attributes: p.attributes }]
+}
+
+interface CscState { resources?: Array<{ id: string; kind: CscKind; name: string }>; resourceIndex?: number }
+
+async function discoverResources(ckan: CkanClient, log: (m: string) => void): Promise<Array<{ id: string; kind: CscKind; name: string }>> {
+  const ids = new Set(KNOWN_RESOURCES)
+  const names = new Map<string, string>()
+  for (const q of ['campaign spending commission', 'campaign contributions received', 'expenditures made candidates', 'loans received candidates', 'noncandidate committee']) {
+    try {
+      for (const pkg of await ckan.packageSearch(q, 50)) {
+        if (!/campaign|candidate|committee/i.test(`${pkg.title} ${pkg.organization?.title ?? ''}`)) continue
+        for (const res of pkg.resources) if (res.datastore_active) { ids.add(res.id); names.set(res.id, `${pkg.title} — ${res.name}`) }
+      }
+    } catch (e) { log(`package_search "${q}" failed: ${(e as Error).message}`) }
+  }
+  const out: Array<{ id: string; kind: CscKind; name: string }> = []
+  for (const id of ids) {
+    try {
+      const page = await ckan.datastoreSearch(id, { limit: 1 })
+      const kind = classifyFields(page.fields.map(f => f.id))
+      if (kind) out.push({ id, kind, name: names.get(id) ?? id })
+      else log(`resource ${id} not classified (fields: ${page.fields.map(f => f.id).join(', ')})`)
+    } catch (e) { log(`resource ${id} unreadable: ${(e as Error).message}`) }
+  }
+  return out
+}
+
 /**
- * Full CSC import — loops through all records.
- * Used by admin manual trigger.
+ * Import one batch. `offset` is the record offset within the current resource; the resource index is
+ * kept in opts.params.resource (or discovered and stored by the caller via metadata).
  */
-export async function importCSCFull(): Promise<{
-  inserted: number
-  total: number
-  personsCreated: number
-}> {
-  let offset = 0
-  const LIMIT = 1000
-  let totalInserted = 0
-  let totalFetched = 0
-  let totalPersonsCreated = 0
+export async function importBatch(db: Db, offset: number, batchSize: number, opts: ImportOptions = {}): Promise<BatchResult> {
+  const log = opts.log ?? (() => {})
+  const params = opts.params ?? {}
+  const result = emptyResult(offset)
+  const kindParam = params.kind as CscKind | undefined
 
-  while (true) {
-    const result = await importCSCBatch(offset, LIMIT)
-    totalInserted += result.inserted
-    totalPersonsCreated = result.personsCreated // cumulative from ensurePersons
-    totalFetched += result.inserted
-
-    if (result.done) break
-    offset = result.nextOffset
+  let page: SourcePage
+  let kind: CscKind
+  if (opts.pageSource) {
+    page = await opts.pageSource(offset, batchSize, params)
+    kind = kindParam ?? 'contribution'
+  } else {
+    const ckan = new CkanClient(HAWAII_OPEN_DATA)
+    let resourceId = params.resource
+    if (!resourceId) {
+      const resources = await discoverResources(ckan, log)
+      const state: CscState = { resources }
+      const idx = Number(params.resourceIndex ?? 0)
+      const chosen = resources[idx]
+      if (!chosen) return { ...result, done: true }
+      resourceId = chosen.id
+      kind = chosen.kind
+      params.resource = resourceId
+      params.kind = kind
+      log(`resource ${idx + 1}/${resources.length}: ${chosen.name} (${kind})`)
+      void state
+    } else {
+      kind = kindParam ?? classifyFields((await ckan.datastoreSearch(resourceId, { limit: 1 })).fields.map(f => f.id)) ?? 'contribution'
+    }
+    const r = await ckan.datastoreSearch(resourceId, { limit: batchSize, offset, sort: '_id asc' })
+    page = { records: r.records, total: r.total }
   }
 
-  return { inserted: totalInserted, total: totalFetched, personsCreated: totalPersonsCreated }
+  for (const raw of page.records) {
+    const parsed = parseCscRecord(kind, raw)
+    if (!parsed) { result.seen++; continue }
+    try {
+      await processRecord(db, {
+        document: {
+          source: SOURCE_KEY, source_record_id: `${params.resource ?? kind}:${parsed.recordId}`, doc_type: DOC_FOR[kind],
+          title: `${parsed.fromName} → ${parsed.toName}`, doc_date: parsed.date, raw,
+          url: params.resource ? `${HAWAII_OPEN_DATA}/dataset/${params.resource}` : null,
+        },
+        edges: async ({ db: d, created }) => {
+          const fromIsCandidate = kind !== 'contribution' && !parsed.fromIsOrg
+          const toIsCandidate = kind !== 'expenditure' && !parsed.toIsOrg
+          const from = await refFor(d, parsed.fromName, parsed.fromIsOrg, { candidate: fromIsCandidate, regNo: kind !== 'contribution' ? parsed.regNo : null })
+          const to = await refFor(d, parsed.toName, parsed.toIsOrg, { candidate: toIsCandidate, regNo: kind !== 'expenditure' ? parsed.regNo : null })
+          if (from.created) created()
+          if (to.created) created()
+          return planEdges(kind, parsed, from, to)
+        },
+      }, result)
+    } catch (e) {
+      result.errors++
+      log(`record ${parsed.recordId}: ${(e as Error).message}`)
+    }
+  }
+  result.nextOffset = offset + page.records.length
+  const total = page.total
+  result.done = page.done ?? (page.records.length < batchSize || (total != null && result.nextOffset >= total))
+  return result
 }
