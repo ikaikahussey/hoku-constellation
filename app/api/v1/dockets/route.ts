@@ -1,26 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { authenticateApiRequest, paginationParams } from '../_lib/auth'
 
 export async function GET(request: NextRequest) {
-  const { error } = await authenticateApiRequest()
+  const { error, db } = await authenticateApiRequest()
   if (error) return error
-
-  const { searchParams } = request.nextUrl
-  const { limit, offset } = paginationParams(searchParams)
-  const status = searchParams.get('status')
-  const utilityType = searchParams.get('utility_type')
-
-  const supabase = await createClient()
-  let query = supabase
-    .from('puc_docket')
-    .select('*')
-    .order('filed_date', { ascending: false })
-    .range(offset, offset + limit - 1)
-
-  if (status) query = query.eq('status', status)
-  if (utilityType) query = query.eq('utility_type', utilityType)
-
-  const { data } = await query
-  return NextResponse.json({ data: data || [], limit, offset })
+  const sp = request.nextUrl.searchParams
+  const { limit, offset } = paginationParams(sp)
+  const params: unknown[] = []
+  const where = [`kind = 'docket'`]
+  if (sp.get('status')) { params.push(sp.get('status')); where.push(`attributes ->> 'docket_status' = $${params.length}`) }
+  if (sp.get('utility_type')) { params.push(sp.get('utility_type')); where.push(`attributes ->> 'utility_type' = $${params.length}`) }
+  if (sp.get('agency')) { params.push(sp.get('agency')); where.push(`attributes ->> 'agency' = $${params.length}`) }
+  params.push(limit, offset)
+  const data = await db.many(`select id, name, identifiers, attributes from entity where ${where.join(' and ')} order by attributes ->> 'filed_date' desc nulls last limit $${params.length - 1} offset $${params.length}`, params)
+  return NextResponse.json({ data, limit, offset })
 }

@@ -1,17 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { authenticateApiRequest } from '../../../_lib/auth'
+import { getArticlesForEntity } from '@/lib/db/queries'
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { error } = await authenticateApiRequest()
+  const { error, db } = await authenticateApiRequest()
   if (error) return error
-
   const { id } = await params
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('article_entity_mention')
-    .select('mention_type, article:article_id(id, title, url, published_at, source, author, summary)')
-    .eq('person_id', id)
-
-  return NextResponse.json({ data: data || [] })
+  return NextResponse.json({ data: await getArticlesForEntity(db, id, 100) })
 }

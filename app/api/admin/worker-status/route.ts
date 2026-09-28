@@ -1,152 +1,66 @@
 import { NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { authenticateStaff } from '@/app/api/analytics/_lib/auth'
+import { SOURCE_REGISTRY } from '@/lib/import/source-registry'
+import type { ImportCursorRow } from '@/lib/db/types'
 
 export const maxDuration = 30
 export const dynamic = 'force-dynamic'
 
-const WORKER_SOURCES: { source: string; label: string }[] = [
-  { source: 'hawaii_csc', label: 'Hawaii Campaign Spending Commission' },
-  { source: 'fec', label: 'Federal Election Commission' },
-  { source: 'lobbyist', label: 'Lobbyist Registrations' },
-  { source: 'puc', label: 'PUC Dockets' },
-]
-
-type WorkerEntry = {
-  source: string
-  label: string
-  last_run_at: string | null
-  status: string
-  cursor_offset: number
-  metadata: Record<string, unknown>
-}
-
 export async function GET() {
-  const supabase = createAdminClient()
+  const { error, db } = await authenticateStaff()
+  if (error) return error
 
-  const [
-    cursors,
-    scoresCount,
-    scoresLatest,
-    graphLatest,
-    alertsTotal,
-    alertsPending,
-    alertsLatest,
-    persons,
-    orgs,
-    relationships,
-    cscContribs,
-    fecContribs,
-    lobbyistRegs,
-    pucDockets,
-    derivedEdges,
-  ] = await Promise.all([
-    supabase
-      .from('import_cursor')
-      .select('source, cursor_offset, last_run_at, status, metadata'),
-    supabase
-      .from('ax_influence_score')
-      .select('id', { count: 'exact', head: true }),
-    supabase
-      .from('ax_influence_score')
-      .select('computed_at, score_version')
-      .order('computed_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from('ax_graph_snapshot')
-      .select('snapshot_date, node_count, edge_count, metrics')
-      .order('snapshot_date', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase.from('ax_alert').select('id', { count: 'exact', head: true }),
-    supabase
-      .from('ax_alert')
-      .select('id', { count: 'exact', head: true })
-      .eq('acknowledged', false),
-    supabase
-      .from('ax_alert')
-      .select('created_at')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase.from('person').select('id', { count: 'estimated', head: true }),
-    supabase.from('organization').select('id', { count: 'estimated', head: true }),
-    supabase.from('relationship').select('id', { count: 'estimated', head: true }),
-    supabase
-      .from('contribution')
-      .select('id', { count: 'estimated', head: true })
-      .eq('source', 'hawaii_csc'),
-    supabase
-      .from('contribution')
-      .select('id', { count: 'estimated', head: true })
-      .eq('source', 'fec'),
-    supabase
-      .from('lobbyist_registration')
-      .select('id', { count: 'estimated', head: true }),
-    supabase.from('puc_docket').select('id', { count: 'estimated', head: true }),
-    supabase
-      .from('ax_relationship_edge')
-      .select('id', { count: 'estimated', head: true }),
+  const [cursors, docCounts, edgeCounts, unmatched, scores, graph, alerts, volumes] = await Promise.all([
+    db.many<ImportCursorRow>(`select source, cursor_offset, last_run_at, status, metadata from import_cursor`),
+    db.many<{ source: string; n: string; last: string | null }>(`select source, count(*)::text n, max(fetched_at)::text last from document group by source`),
+    db.many<{ source: string; n: string; unmatched: string; review: string }>(
+      `select d.source, count(*)::text n, count(*) filter (where e.match_status = 'unmatched')::text unmatched, count(*) filter (where e.match_status = 'review')::text review
+         from edge e join document d on d.id = e.document_id group by d.source`),
+    db.one<{ n: string }>(`select count(*)::text n from edge where match_status <> 'matched'`),
+    db.one<{ n: string; last: string | null; v: number | null }>(`select count(*)::text n, max(computed_at)::text last, max(score_version) v from ax_influence_score`),
+    db.one<{ snapshot_date: string; node_count: number; edge_count: number; metrics: { cluster_count?: number } }>(`select snapshot_date::text, node_count, edge_count, metrics from ax_graph_snapshot order by snapshot_date desc limit 1`),
+    db.one<{ total: string; pending: string; latest: string | null }>(`select count(*)::text total, count(*) filter (where not acknowledged)::text pending, max(created_at)::text latest from ax_alert`),
+    db.one<{ persons: string; orgs: string; bills: string; dockets: string; parcels: string; documents: string; edges: string; derived: string }>(
+      `select (select count(*) from entity where kind='person')::text persons, (select count(*) from entity where kind='org')::text orgs,
+              (select count(*) from entity where kind='bill')::text bills, (select count(*) from entity where kind='docket')::text dockets,
+              (select count(*) from entity where kind='parcel')::text parcels, (select count(*) from document)::text documents,
+              (select count(*) from edge)::text edges, (select count(*) from ax_relationship_edge)::text derived`),
   ])
 
-  const cursorRows = (cursors.data ?? []) as {
-    source: string
-    cursor_offset: number | null
-    last_run_at: string | null
-    status: string | null
-    metadata: Record<string, unknown> | null
-  }[]
-  const cursorBySource = new Map(cursorRows.map((r) => [r.source, r]))
+  const cursorBySource = new Map(cursors.map(c => [c.source, c]))
+  const docsBySource = new Map(docCounts.map(d => [d.source, d]))
+  const edgesBySource = new Map(edgeCounts.map(e => [e.source, e]))
 
-  const workers: WorkerEntry[] = WORKER_SOURCES.map(({ source, label }) => {
-    const row = cursorBySource.get(source)
+  const workers = SOURCE_REGISTRY.map(s => {
+    const cursor = cursorBySource.get(s.key)
+    const docs = docsBySource.get(s.key)
+    const edges = edgesBySource.get(s.key)
     return {
-      source,
-      label,
-      last_run_at: row?.last_run_at ?? null,
-      status: row?.status ?? 'idle',
-      cursor_offset: row?.cursor_offset ?? 0,
-      metadata: row?.metadata ?? {},
+      source: s.key, label: s.name, agency: s.agency, jurisdiction: s.jurisdiction, tier: s.tier, cadence: s.cadence,
+      registry_status: s.status, notes: s.notes ?? null,
+      last_run_at: cursor?.last_run_at ?? null,
+      status: cursor?.status ?? 'idle',
+      cursor_offset: cursor?.cursor_offset ?? 0,
+      metadata: cursor?.metadata ?? {},
+      documents: Number(docs?.n ?? 0),
+      last_document_at: docs?.last ?? null,
+      edges: Number(edges?.n ?? 0),
+      unmatched: Number(edges?.unmatched ?? 0),
+      review: Number(edges?.review ?? 0),
     }
   })
-
-  const graphMetrics = (graphLatest.data?.metrics ?? {}) as {
-    cluster_count?: number
-  }
-
-  const cscTotal = cscContribs.count ?? 0
-  const fecTotal = fecContribs.count ?? 0
 
   return NextResponse.json({
     workers,
     analytics: {
-      scores: {
-        count: scoresCount.count ?? 0,
-        last_computed: scoresLatest.data?.computed_at ?? null,
-        score_version: scoresLatest.data?.score_version ?? null,
-      },
-      graph: {
-        last_snapshot_date: graphLatest.data?.snapshot_date ?? null,
-        node_count: graphLatest.data?.node_count ?? 0,
-        edge_count: graphLatest.data?.edge_count ?? 0,
-        cluster_count: graphMetrics.cluster_count ?? 0,
-      },
-      alerts: {
-        total: alertsTotal.count ?? 0,
-        pending: alertsPending.count ?? 0,
-        latest_at: alertsLatest.data?.created_at ?? null,
-      },
+      scores: { count: Number(scores?.n ?? 0), last_computed: scores?.last ?? null, score_version: scores?.v ?? null },
+      graph: { last_snapshot_date: graph?.snapshot_date ?? null, node_count: graph?.node_count ?? 0, edge_count: graph?.edge_count ?? 0, cluster_count: graph?.metrics?.cluster_count ?? 0 },
+      alerts: { total: Number(alerts?.total ?? 0), pending: Number(alerts?.pending ?? 0), latest_at: alerts?.latest ?? null },
     },
     data_volumes: {
-      persons: persons.count ?? 0,
-      organizations: orgs.count ?? 0,
-      relationships: relationships.count ?? 0,
-      contributions_csc: cscTotal,
-      contributions_fec: fecTotal,
-      contributions_total: cscTotal + fecTotal,
-      lobbyist_registrations: lobbyistRegs.count ?? 0,
-      puc_dockets: pucDockets.count ?? 0,
-      derived_edges: derivedEdges.count ?? 0,
+      persons: Number(volumes?.persons ?? 0), organizations: Number(volumes?.orgs ?? 0), bills: Number(volumes?.bills ?? 0),
+      dockets: Number(volumes?.dockets ?? 0), parcels: Number(volumes?.parcels ?? 0), documents: Number(volumes?.documents ?? 0),
+      edges: Number(volumes?.edges ?? 0), derived_edges: Number(volumes?.derived ?? 0), unmatched_edges: Number(unmatched?.n ?? 0),
     },
   })
 }

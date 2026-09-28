@@ -1,74 +1,21 @@
-import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { getServiceDb } from '@/lib/db/service'
+import { searchEntities } from '@/lib/db/queries'
+import type { EntityKind } from '@/lib/db/types'
 
+// Public entity search (entity rows are public; edges/documents stay gated by RLS/API gates).
 export async function GET(request: NextRequest) {
-  const { searchParams } = request.nextUrl
-  const q = searchParams.get('q') || ''
-  const type = searchParams.get('type') || ''
-  const island = searchParams.get('island') || ''
-  const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50)
-  const offset = parseInt(searchParams.get('offset') || '0')
-
-  if (!q) {
-    return NextResponse.json({ results: [], total: 0 })
-  }
-
-  const supabase = await createClient()
-  const results: Record<string, unknown>[] = []
-
-  if (!type || type === 'person') {
-    let query = supabase
-      .from('person')
-      .select('id, full_name, slug, office_held, entity_types, island, status, party')
-      .ilike('full_name', `%${q}%`)
-      .order('is_featured', { ascending: false })
-      .limit(limit)
-
-    if (island) query = query.eq('island', island)
-
-    const { data } = await query
-    if (data) {
-      for (const p of data) {
-        results.push({
-          id: p.id,
-          type: 'person',
-          name: p.full_name,
-          slug: p.slug,
-          subtitle: [p.office_held, p.party].filter(Boolean).join(' · '),
-          badges: p.entity_types,
-          island: p.island,
-          status: p.status,
-        })
-      }
-    }
-  }
-
-  if (!type || type === 'organization') {
-    let query = supabase
-      .from('organization')
-      .select('id, name, slug, org_type, island, sector, status')
-      .ilike('name', `%${q}%`)
-      .order('is_featured', { ascending: false })
-      .limit(limit)
-
-    if (island) query = query.eq('island', island)
-
-    const { data } = await query
-    if (data) {
-      for (const o of data) {
-        results.push({
-          id: o.id,
-          type: 'organization',
-          name: o.name,
-          slug: o.slug,
-          subtitle: [o.org_type?.replace(/_/g, ' '), o.sector?.replace(/_/g, ' ')].filter(Boolean).join(' · '),
-          badges: [o.org_type].filter(Boolean),
-          island: o.island,
-          status: o.status,
-        })
-      }
-    }
-  }
-
-  return NextResponse.json({ results: results.slice(offset, offset + limit), total: results.length })
+  const sp = request.nextUrl.searchParams
+  const q = sp.get('q') || ''
+  if (!q) return NextResponse.json({ results: [], total: 0 })
+  const type = sp.get('type') || ''
+  const kind = type === 'organization' ? 'org' : (type as EntityKind | '')
+  const db = await getServiceDb()
+  const { results, total } = await searchEntities(db, q, {
+    kind: kind || undefined,
+    island: sp.get('island') || undefined,
+    limit: Math.min(parseInt(sp.get('limit') || '20'), 50),
+    offset: parseInt(sp.get('offset') || '0'),
+  })
+  return NextResponse.json({ results, total })
 }

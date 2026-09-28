@@ -1,38 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { authenticateApiRequest, paginationParams } from '../_lib/auth'
+import { searchEntities } from '@/lib/db/queries'
+import type { EntityKind } from '@/lib/db/types'
 
 export async function GET(request: NextRequest) {
-  const { error } = await authenticateApiRequest()
+  const { error, db } = await authenticateApiRequest()
   if (error) return error
-
-  const { searchParams } = request.nextUrl
-  const q = searchParams.get('q') || ''
-  const type = searchParams.get('type') || ''
-  const { limit, offset } = paginationParams(searchParams)
-
+  const sp = request.nextUrl.searchParams
+  const q = sp.get('q') || ''
+  const { limit, offset } = paginationParams(sp)
   if (!q) return NextResponse.json({ results: [], total: 0, limit, offset })
-
-  const supabase = await createClient()
-  const results: Record<string, unknown>[] = []
-
-  if (!type || type === 'person') {
-    const { data } = await supabase
-      .from('person')
-      .select('id, full_name, slug, office_held, entity_types, island, status, party, district')
-      .ilike('full_name', `%${q}%`)
-      .range(offset, offset + limit - 1)
-    if (data) results.push(...data.map(p => ({ ...p, _type: 'person' })))
-  }
-
-  if (!type || type === 'org') {
-    const { data } = await supabase
-      .from('organization')
-      .select('id, name, slug, org_type, island, sector, status')
-      .ilike('name', `%${q}%`)
-      .range(offset, offset + limit - 1)
-    if (data) results.push(...data.map(o => ({ ...o, _type: 'organization' })))
-  }
-
-  return NextResponse.json({ results, total: results.length, limit, offset })
+  const type = sp.get('type') || sp.get('kind') || ''
+  const kind = type === 'organization' ? 'org' : (type as EntityKind | '')
+  const { results, total } = await searchEntities(db, q, { kind: kind || undefined, limit, offset })
+  return NextResponse.json({ results, total, limit, offset })
 }

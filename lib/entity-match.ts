@@ -205,7 +205,7 @@ export async function fuzzyMatch(db: Db, rawName: string, opts: FuzzyOptions): P
   const trigram = opts.trigram ?? 0.25
   const rows = await db.many<CandidateRow>(
     `select id, name, aliases from entity
-      where kind = $1 and merged_into_id is null
+      where kind = $1
         and (similarity(lower(name), $2) >= $3
              or exists (select 1 from unnest(aliases) a where similarity(lower(a), $2) >= $3)
              or lower(name) = $4)
@@ -241,6 +241,7 @@ export async function resolveEntity(db: Db, input: ResolveInput): Promise<Resolu
   }
   if (!input.rawName?.trim()) return { entityId: null, status: 'unmatched', confidence: null, via: 'none' }
   const candidates = await fuzzyMatch(db, input.rawName, { kind: input.kind })
+  // Merged entities stay matchable by their old names; resolve to the survivor.
   const best = candidates[0]
   if (!best) return { entityId: null, status: 'unmatched', confidence: null, via: 'none' }
   const status = autoMatchThreshold(best.confidence)

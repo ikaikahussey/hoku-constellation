@@ -1,51 +1,34 @@
-import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
+import { getServiceDb } from '@/lib/db/service'
+import type { Db } from '@/lib/db/types'
 
 /**
- * Subscriber-gate analytics routes. Matches the RLS pattern from 012/015:
- * individual/professional/institutional tiers in active or trialing status,
- * OR a staff_role row.
+ * Subscriber-gate analytics routes: paid tier in active/trialing status, or staff.
+ * Returns the service Db for the handler; the gate itself is the access control (mirrors RLS).
  */
-export async function authenticateSubscriber() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return {
-      error: NextResponse.json({ error: 'Authentication required' }, { status: 401 }),
-      supabase,
-      userId: null,
-    }
-  }
-
-  const [{ data: profile }, { data: staff }] = await Promise.all([
-    supabase.from('user_profile').select('subscription_tier, subscription_status').eq('id', user.id).maybeSingle(),
-    supabase.from('staff_role').select('user_id').eq('user_id', user.id).maybeSingle(),
-  ])
-
-  const isStaff = !!staff
-  const isSubscriber =
-    profile &&
-    ['individual', 'professional', 'institutional'].includes(profile.subscription_tier) &&
-    ['active', 'trialing'].includes(profile.subscription_status)
-
-  if (!isStaff && !isSubscriber) {
-    return {
-      error: NextResponse.json(
-        { error: 'Subscription required' },
-        { status: 403 }
-      ),
-      supabase,
-      userId: user.id,
-    }
-  }
-  return { error: null, supabase, userId: user.id }
+export async function authenticateSubscriber(): Promise<{ error: NextResponse | null; db: Db; userId: string | null }> {
+  const db = await getServiceDb()
+  const user = await getCurrentUser()
+  if (!user) return { error: NextResponse.json({ error: 'Authentication required' }, { status: 401 }), db, userId: null }
+  if (!user.canAccessGated) return { error: NextResponse.json({ error: 'Subscription required' }, { status: 403 }), db, userId: user.id }
+  return { error: null, db, userId: user.id }
 }
 
-/** Bearer CRON_SECRET auth for admin routes. */
+/** Bearer CRON_SECRET auth for admin/cron routes. */
 export function authenticateCron(request: Request): Response | null {
   const header = request.headers.get('authorization')
-  if (header !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!process.env.CRON_SECRET || header !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   return null
+}
+
+/** Staff-only gate for admin UI API routes (session-based). */
+export async function authenticateStaff(): Promise<{ error: NextResponse | null; db: Db; userId: string | null }> {
+  const db = await getServiceDb()
+  const user = await getCurrentUser()
+  if (!user) return { error: NextResponse.json({ error: 'Authentication required' }, { status: 401 }), db, userId: null }
+  if (!user.isStaff) return { error: NextResponse.json({ error: 'Staff only' }, { status: 403 }), db, userId: user.id }
+  return { error: null, db, userId: user.id }
 }

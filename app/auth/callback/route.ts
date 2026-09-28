@@ -1,18 +1,12 @@
-import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 
+// OAuth and magic-link flows complete on the Neon Auth server, which sets the session cookie via
+// /api/auth/[...path] and redirects here with ?next=. This route only forwards to the destination.
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl
-  const code = searchParams.get('code')
   const next = searchParams.get('next') ?? '/search'
-
-  if (code) {
-    const supabase = await createClient()
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
-    if (!error) {
-      return NextResponse.redirect(`${origin}${next}`)
-    }
-  }
-
-  return NextResponse.redirect(`${origin}/auth/login?error=auth_failed`)
+  const error = searchParams.get('error')
+  if (error) return NextResponse.redirect(`${origin}/auth/login?error=${encodeURIComponent(error)}`)
+  const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/search'
+  return NextResponse.redirect(`${origin}${safeNext}`)
 }

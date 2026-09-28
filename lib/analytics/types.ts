@@ -1,7 +1,8 @@
 /**
- * Shared types for the analytics module.
- * Kept deliberately loose (unknown/Record) where Supabase rows are passed through.
+ * Shared types for the analytics module. All analytics functions read the core schema
+ * (entity / document / edge / summary) through a `Db` and write only ax_* tables.
  */
+import type { EdgeRow, EntityRow, InfluenceScoreRow, AlertRow } from '@/lib/db/types'
 
 export interface ScoreBreakdown {
   composite: number
@@ -18,7 +19,8 @@ export interface DimensionResult {
   evidence: Record<string, unknown>
 }
 
-export type EdgeType =
+/** Derived (analytical) edge types written to ax_relationship_edge. Distinct from canonical edge.type. */
+export type DerivedEdgeType =
   | 'co_donor'
   | 'donor_candidate'
   | 'co_board_member'
@@ -33,48 +35,69 @@ export interface GraphNode {
   label: string
   group?: string
   score?: number
+  kind?: EntityRow['kind']
+  /** @deprecated use kind */
   entity_type?: 'person' | 'organization'
 }
 
 export interface GraphLink {
   source: string
   target: string
-  type: EdgeType | string
+  type: DerivedEdgeType | string
   value: number
 }
 
 export interface AlertRecord {
   alert_type: string
   severity: 'high' | 'medium' | 'low'
-  person_id?: string | null
-  organization_id?: string | null
+  entity_id?: string | null
   headline: string
   detail: Record<string, unknown>
   source_records: Array<Record<string, unknown>>
 }
 
+export interface EdgeView extends EdgeRow {
+  from_name: string | null
+  from_kind: string | null
+  from_slug: string | null
+  to_name: string | null
+  to_kind: string | null
+  to_slug: string | null
+  doc_source: string
+  doc_type: string
+  doc_title: string | null
+  doc_url: string | null
+  doc_date: string | null
+}
+
 export interface PersonProfile {
-  person: Record<string, unknown>
-  roles: Array<Record<string, unknown>>
-  donationsGiven: Array<Record<string, unknown>>
-  donationsReceived: Array<Record<string, unknown>>
-  lobbying: Array<Record<string, unknown>>
-  testimony: Array<Record<string, unknown>>
-  boards: Array<Record<string, unknown>>
-  property: Array<Record<string, unknown>>
-  disclosure: Array<Record<string, unknown>>
-  contracts: Array<Record<string, unknown>>
+  entity: EntityRow | null
+  /** @deprecated alias of entity */
+  person: EntityRow | null
+  roles: EdgeView[]
+  donationsGiven: EdgeView[]
+  donationsReceived: EdgeView[]
+  lobbying: EdgeView[]
+  testimony: EdgeView[]
+  boards: EdgeView[]
+  property: EdgeView[]
+  disclosure: EdgeView[]
+  contracts: EdgeView[]
   score: ScoreBreakdown | null
   connections: Array<Record<string, unknown>>
-  alerts: Array<Record<string, unknown>>
+  alerts: AlertRow[]
 }
 
 export interface OrgProfile {
-  organization: Record<string, unknown>
-  contributions: Array<Record<string, unknown>>
-  lobbying: Array<Record<string, unknown>>
-  officers: Array<Record<string, unknown>>
-  contracts: Array<Record<string, unknown>>
-  properties: Array<Record<string, unknown>>
-  mentions: Array<Record<string, unknown>>
+  entity: EntityRow | null
+  /** @deprecated alias of entity */
+  organization: EntityRow | null
+  contributions: EdgeView[]
+  lobbying: EdgeView[]
+  officers: EdgeView[]
+  contracts: EdgeView[]
+  properties: EdgeView[]
+  mentions: EdgeView[]
 }
+
+export type { InfluenceScoreRow, AlertRow }

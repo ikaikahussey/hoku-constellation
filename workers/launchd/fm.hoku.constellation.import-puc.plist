@@ -13,12 +13,10 @@
     <string>__REPO_DIR__</string>
     <key>StartCalendarInterval</key>
     <dict>
-        <key>Weekday</key>
-        <integer>0</integer>
         <key>Hour</key>
-        <integer>23</integer>
+        <integer>18</integer>
         <key>Minute</key>
-        <integer>0</integer>
+        <integer>30</integer>
     </dict>
     <key>StandardOutPath</key>
     <string>__REPO_DIR__/workers/logs/import-puc.out.log</string>

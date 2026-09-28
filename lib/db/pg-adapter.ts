@@ -22,7 +22,7 @@ export function wrapPg(pool: PgPoolLike): Db {
     const client = await pool.connect()
     try {
       await client.query('begin')
-      const result = await fn(makeDb(client, async inner => inner(makeDb(client, () => Promise.reject(new Error('nested transaction')))), async () => {}))
+      const result = await fn(makeDb(client, async inner => inner(makeDb(client, () => Promise.reject(new Error('nested transaction')), async () => {})), async () => {}))
       await client.query('commit')
       return result
     } catch (e) {

@@ -1,33 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { getServiceDb } from '@/lib/db/service'
+import { updateUserAccountByUserId, updateUserAccountByStripeCustomer, getUserAccountByStripeCustomer } from '@/lib/db/queries/accounts'
+import { EVENTS } from '@/lib/analytics-events'
+import { captureServerEvent } from '@/lib/analytics-server'
+import type { UserAccountRow } from '@/lib/db/types'
 
 function getStripe() {
-  return new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-    apiVersion: '2026-03-25.dahlia',
-  })
+  return new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2026-08-26.dahlia' })
 }
 
-function tierFromPriceId(priceId: string): string {
-  const individual = [
-    process.env.STRIPE_PRICE_INDIVIDUAL_MONTHLY,
-    process.env.STRIPE_PRICE_INDIVIDUAL_YEARLY,
-  ]
-  const professional = [
-    process.env.STRIPE_PRICE_PROFESSIONAL_MONTHLY,
-    process.env.STRIPE_PRICE_PROFESSIONAL_YEARLY,
-  ]
-
+export function tierFromPriceId(priceId: string | undefined): UserAccountRow['subscription_tier'] {
+  if (!priceId) return 'free'
+  const individual = [process.env.STRIPE_PRICE_INDIVIDUAL_MONTHLY, process.env.STRIPE_PRICE_INDIVIDUAL_YEARLY]
+  const professional = [process.env.STRIPE_PRICE_PROFESSIONAL_MONTHLY, process.env.STRIPE_PRICE_PROFESSIONAL_YEARLY]
   if (individual.includes(priceId)) return 'individual'
   if (professional.includes(priceId)) return 'professional'
   return 'free'
 }
 
+const STATUS_MAP: Record<string, string> = {
+  active: 'active', trialing: 'trialing', past_due: 'past_due', canceled: 'canceled', unpaid: 'canceled',
+  incomplete: 'inactive', incomplete_expired: 'inactive', paused: 'inactive',
+}
+
+/**
+ * Stripe webhook. Users are resolved via user_account (client_reference_id = Neon Auth user id on
+ * checkout; stripe_customer_id thereafter). Emits server-side PostHog events.
+ */
 export async function POST(request: NextRequest) {
   const stripe = getStripe()
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || ''
   const body = await request.text()
-  const signature = request.headers.get('stripe-signature')!
+  const signature = request.headers.get('stripe-signature') ?? ''
 
   let event: Stripe.Event
   try {
@@ -36,7 +41,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
 
-  const supabase = createAdminClient()
+  const db = await getServiceDb()
 
   switch (event.type) {
     case 'checkout.session.completed': {
@@ -45,57 +50,39 @@ export async function POST(request: NextRequest) {
         const subscription = await stripe.subscriptions.retrieve(session.subscription as string)
         const priceId = subscription.items.data[0]?.price.id
         const tier = tierFromPriceId(priceId)
-
-        await supabase.from('user_profile').upsert({
-          id: session.client_reference_id,
-          email: session.customer_email,
+        await updateUserAccountByUserId(db, session.client_reference_id, {
           stripe_customer_id: session.customer as string,
           stripe_subscription_id: session.subscription as string,
           subscription_tier: tier,
-          subscription_status: 'active',
+          subscription_status: STATUS_MAP[subscription.status] ?? 'active',
+          trial_ends_at: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
+        })
+        await captureServerEvent(session.client_reference_id, EVENTS.CHECKOUT_COMPLETED, {
+          tier, amount: (session.amount_total ?? 0) / 100, currency: session.currency ?? 'usd',
         })
       }
       break
     }
-
     case 'customer.subscription.updated': {
       const subscription = event.data.object as Stripe.Subscription
       const customerId = subscription.customer as string
-      const priceId = subscription.items.data[0]?.price.id
-      const tier = tierFromPriceId(priceId)
-
-      const statusMap: Record<string, string> = {
-        active: 'active',
-        trialing: 'trialing',
-        past_due: 'past_due',
-        canceled: 'canceled',
-        unpaid: 'canceled',
-      }
-
-      await supabase
-        .from('user_profile')
-        .update({
-          subscription_tier: tier,
-          subscription_status: statusMap[subscription.status] || 'inactive',
-          trial_ends_at: subscription.trial_end
-            ? new Date(subscription.trial_end * 1000).toISOString()
-            : null,
-        })
-        .eq('stripe_customer_id', customerId)
+      const tier = tierFromPriceId(subscription.items.data[0]?.price.id)
+      await updateUserAccountByStripeCustomer(db, customerId, {
+        subscription_tier: tier,
+        subscription_status: STATUS_MAP[subscription.status] ?? 'inactive',
+        stripe_subscription_id: subscription.id,
+        trial_ends_at: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
+      })
       break
     }
-
     case 'customer.subscription.deleted': {
       const subscription = event.data.object as Stripe.Subscription
       const customerId = subscription.customer as string
-
-      await supabase
-        .from('user_profile')
-        .update({
-          subscription_tier: 'free',
-          subscription_status: 'canceled',
-        })
-        .eq('stripe_customer_id', customerId)
+      const account = await getUserAccountByStripeCustomer(db, customerId)
+      await updateUserAccountByStripeCustomer(db, customerId, { subscription_tier: 'free', subscription_status: 'canceled' })
+      if (account) {
+        await captureServerEvent(account.user_id, EVENTS.SUBSCRIPTION_CANCELLED, { previous_tier: account.subscription_tier })
+      }
       break
     }
   }
