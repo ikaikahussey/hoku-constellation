@@ -28,7 +28,8 @@ psql "$DATABASE_URL_UNPOOLED" -v ON_ERROR_STOP=1 -f db/migrations/001_core_schem
 createdb -h … scratch && pg_restore --no-owner --no-acl -d "$SCRATCH_URL" legacy.dump
 psql "$SCRATCH_URL" -c 'alter schema public rename to legacy'
 pg_dump --schema=legacy --no-owner --no-privileges "$SCRATCH_URL" | psql "$DATABASE_URL_UNPOOLED" -v ON_ERROR_STOP=1
-#    (or run scripts/db/restore-legacy.sh which performs these steps)
+#    (or run scripts/db/restore-legacy.sh which performs these steps; without pg_dump/psql — e.g. from a
+#    Vercel Sandbox — use scripts/db/migrate.ts for step 2 and scripts/db/export-supabase-rest.ts for step 3)
 
 # 4. Port + reconcile (idempotent; re-run inserts 0 rows)
 npx tsx scripts/db/port-legacy.ts --markdown docs/PORT_RECONCILIATION.md
@@ -57,7 +58,7 @@ Analytics parity: `scripts/db/parity-snapshot.ts --entities <10 ids> --base http
 6. **Vercel env.** Remove `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`. Add the Neon vars above for Production and Preview. Add `CRON_SECRET` to Production (it was only set for Preview/Development).
 7. **Deploy** the `main` branch. Vercel Cron picks up `vercel.json` (graph 09:00 UTC, scores 10:00 UTC, change detection hourly).
 8. **Rebuild analytics** (rebuild-graph, recompute-scores) once.
-9. **Reload workers** against Neon: fill `workers/.env` from `workers/.env.example`, then `workers/install.sh`. Run each worker once with `--dry`.
+9. **Ingestion** runs from Vercel Cron (`/api/cron/ingest`, every 15 minutes) once `CRON_SECRET` is set in production; no worker host is required. Optional Mac mini: fill `workers/.env` from `workers/.env.example`, then `workers/install.sh`, and run each worker once with `--dry`.
 10. **Smoke test** production: `BASE_URL=https://constellation.hoku.fm npx playwright test tests/e2e/smoke.spec.ts`.
 11. **Stripe.** Point the webhook endpoint at the new deployment (same URL, so no change) and send a test event from the Stripe dashboard; confirm `user_account` updates.
 12. **Rotate the leaked Supabase service-role key** (it was committed in four `.mjs` scripts, now deleted) — Supabase Dashboard → Settings → API → *Reset service_role key*. Do this even though the project will be retired.

@@ -148,7 +148,13 @@ CAPTCHA, paid, or terms forbid automated access), **manual** (UIPA request; CSV 
 
 ## 5. Scheduling
 
-`workers/launchd/fm.hoku.constellation.import-<source>.plist` (installed by `workers/install.sh`):
+**Default: Vercel Cron.** `vercel.json` calls `/api/cron/ingest` every 15 minutes (Bearer
+`CRON_SECRET`). `lib/import/schedule.ts` selects the live sources that are due (never run, unfinished,
+or cadence elapsed; a source another tick is working on is skipped) and `runImporter` processes batches
+inside a 240 s budget, saving the cursor after each batch. A large backfill therefore proceeds as a chain
+of ticks and needs no always-on machine. `/api/cron/ingest?source=<key>` runs one source on demand.
+
+**Optional: Mac mini.** `workers/launchd/fm.hoku.constellation.import-<source>.plist` (installed by `workers/install.sh`):
 daily 16:00–20:30 HST for Legislature, procurement, PUC, CSC, FEC; weekly Mondays for lobbyists,
 boards, USAspending, SEC; monthly on the 1st for ProPublica and Honolulu property. Analytics jobs
 (`rebuild-graph`, `recompute-scores`, `detect-changes`) run after the importers. `/admin/workers`

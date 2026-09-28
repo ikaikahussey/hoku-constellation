@@ -17,6 +17,8 @@ export interface RunOptions extends ImportOptions {
   resume?: boolean
   /** Max batches per invocation (serverless callers). */
   maxBatches?: number
+  /** Stop starting new batches after this epoch-ms deadline (serverless time budget). */
+  deadlineMs?: number
 }
 
 export async function runImporter(realDb: Db, source: string, importBatch: BatchImporter, opts: RunOptions = {}): Promise<RunSummary> {
@@ -43,6 +45,7 @@ export async function runImporter(realDb: Db, source: string, importBatch: Batch
       if (!opts.dry) await setCursor(db, source, offset, r.done ? 'complete' : 'running', { last_batch: r })
       if (r.done) { total.done = true; break }
       if (opts.maxBatches && total.batches >= opts.maxBatches) break
+      if (opts.deadlineMs && Date.now() >= opts.deadlineMs) { log('time budget reached; cursor saved'); break }
     }
   } catch (e) {
     if (!opts.dry) await setCursor(db, source, offset, 'error', { error: (e as Error).message })
