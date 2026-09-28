@@ -7,7 +7,7 @@
  * plus any CIKs already present on org entities (identifiers.sec_cik).
  */
 import type { Db } from '@/lib/db/types'
-import { fetchJson, fetchText } from '../http'
+import { fetchJson, fetchText, USER_AGENT } from '../http'
 import { processRecord, emptyResult, resolveRef, type BatchResult, type EdgeInput } from '../pipeline'
 import { cleanName, canonicalPersonName, toIsoDate } from '../normalize'
 import type { ImportOptions, SourcePage } from '../types'
@@ -16,7 +16,7 @@ import { load } from 'cheerio'
 export const SOURCE_KEY = 'sec_edgar'
 export const DEFAULT_CIKS = ['0000046619', '0000003906', '0001616862', '0000046195', '0000036377'] // HEI, A&B, Matson, BOH, FHB (First Hawaiian)
 const SUBMISSIONS = (cik: string) => `https://data.sec.gov/submissions/CIK${cik.padStart(10, '0')}.json`
-const UA = { 'user-agent': `HokuInsiderBot/1.0 (+${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://constellation.hoku.fm'}) research@hoku.fm` }
+const UA = { 'user-agent': `${USER_AGENT} research@hoku.fm` }
 
 export interface Submissions {
   cik: string; name: string; tickers?: string[]; sicDescription?: string; stateOfIncorporation?: string
