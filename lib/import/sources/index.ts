@@ -6,6 +6,7 @@ import type { SourceModule } from '../types'
 
 export const IMPORTERS: Record<string, () => Promise<SourceModule>> = {
   csc: () => import('./csc'),
+  ethics_lobbyists: () => import('./ethics-lobbyists'),
   employee_compensation: () => import('./employee-compensation'),
 }
 
