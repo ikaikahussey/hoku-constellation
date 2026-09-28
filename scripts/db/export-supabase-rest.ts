@@ -115,7 +115,7 @@ export async function exportLegacy(opts: { tables?: string[]; page?: number; log
       const orderBy = names.includes('id') ? 'id' : names[0]
       const before = Number((await client.query<{ n: string }>(`select count(*)::text n from legacy.${table}`)).rows[0].n)
       // Resume: keyset tables continue after the largest id already copied.
-      const startAfter = orderBy === 'id' && before > 0 ? (await client.query<{ m: string | null }>(`select max(id)::text m from legacy.${table}`)).rows[0].m : null
+      const startAfter = orderBy === 'id' && before > 0 ? (await client.query<{ m: string | null }>(`select id::text m from legacy.${table} order by id desc limit 1`)).rows[0]?.m ?? null : null
       if (startAfter) log(`[export] ${table}: resuming after id ${startAfter} (${before} rows already copied)`)
       let copied = before
       for await (const rows of restPages(e, table, orderBy, page, startAfter)) {
