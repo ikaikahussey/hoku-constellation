@@ -6,7 +6,8 @@
  *
  *   1. creates schema `legacy` from db/legacy_migrations/*.sql (tables only; policies/indexes stripped)
  *   2. for every table the port reads, pages through PostgREST (1,000 rows, ordered by primary key)
- *      and inserts with json_populate_recordset … on conflict do nothing (idempotent, resumable)
+ *      (keyset on `id` where present, so it resumes after the rows already copied) and inserts with
+ *      json_populate_recordset … on conflict do nothing (idempotent)
  *   3. prints source count vs. copied count per table
  *
  * Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, DATABASE_URL_UNPOOLED (or DATABASE_URL)
@@ -56,22 +57,33 @@ async function restCount(e: Env, table: string): Promise<number | null> {
   return total && total !== '*' ? Number(total) : null
 }
 
-async function* restPages(e: Env, table: string, orderBy: string, page: number): AsyncGenerator<Record<string, unknown>[]> {
+/**
+ * Pages through a table. Tables with an `id` column use keyset pagination (`id > last`), which stays fast at
+ * any depth and lets a re-run resume after the rows already copied; small tables without `id` use offsets.
+ */
+async function* restPages(e: Env, table: string, orderBy: string, page: number, startAfter: string | null): AsyncGenerator<Record<string, unknown>[]> {
+  const keyset = orderBy === 'id'
+  let last: string | null = startAfter
   let offset = 0
   for (;;) {
-    const url = `${e.url}/rest/v1/${table}?select=*&order=${orderBy}.asc&limit=${page}&offset=${offset}`
+    const cursor = keyset ? (last ? `&id=gt.${encodeURIComponent(last)}` : '') : `&offset=${offset}`
+    const url = `${e.url}/rest/v1/${table}?select=*&order=${orderBy}.asc&limit=${page}${cursor}`
     let res: Response | null = null
-    for (let attempt = 0; attempt < 5; attempt++) {
-      res = await fetch(url, { headers: { apikey: e.key, authorization: `Bearer ${e.key}` } })
-      if (res.ok) break
-      if (res.status >= 500 || res.status === 429) { await new Promise(r => setTimeout(r, 1000 * 2 ** attempt)); continue }
-      throw new Error(`${table}: page ${res.status} ${(await res.text()).slice(0, 200)}`)
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try {
+        res = await fetch(url, { headers: { apikey: e.key, authorization: `Bearer ${e.key}` } })
+      } catch { res = null }
+      if (res?.ok) break
+      const status = res?.status ?? 0
+      if (status === 0 || status >= 500 || status === 429 || status === 408) { await new Promise(r => setTimeout(r, Math.min(60_000, 1000 * 2 ** attempt))); continue }
+      throw new Error(`${table}: page ${status} ${(await res!.text()).slice(0, 200)}`)
     }
-    if (!res?.ok) throw new Error(`${table}: gave up after retries`)
+    if (!res?.ok) throw new Error(`${table}: gave up after retries (last=${last ?? offset})`)
     const rows = (await res.json()) as Record<string, unknown>[]
     if (!rows.length) return
     yield rows
-    offset += rows.length
+    if (keyset) last = String(rows[rows.length - 1].id)
+    else offset += rows.length
     if (rows.length < page) return
   }
 }
@@ -98,8 +110,11 @@ export async function exportLegacy(opts: { tables?: string[]; page?: number; log
       const names = cols.rows.map(c => c.column_name)
       const orderBy = names.includes('id') ? 'id' : names[0]
       const before = Number((await client.query<{ n: string }>(`select count(*)::text n from legacy.${table}`)).rows[0].n)
-      let copied = 0
-      for await (const rows of restPages(e, table, orderBy, page)) {
+      // Resume: keyset tables continue after the largest id already copied.
+      const startAfter = orderBy === 'id' && before > 0 ? (await client.query<{ m: string | null }>(`select max(id)::text m from legacy.${table}`)).rows[0].m : null
+      if (startAfter) log(`[export] ${table}: resuming after id ${startAfter} (${before} rows already copied)`)
+      let copied = before
+      for await (const rows of restPages(e, table, orderBy, page, startAfter)) {
         // Drop columns the legacy DDL does not know (REST may expose generated/newer columns).
         const clean = rows.map(r => Object.fromEntries(Object.entries(r).filter(([k]) => names.includes(k))))
         await client.query(`insert into legacy.${table} select * from json_populate_recordset(null::legacy.${table}, $1::json) on conflict do nothing`, [JSON.stringify(clean)])
@@ -107,7 +122,7 @@ export async function exportLegacy(opts: { tables?: string[]; page?: number; log
         if (copied % 10000 === 0 || copied === source) log(`[export] ${table}: ${copied}/${source ?? '?'}`)
       }
       const after = Number((await client.query<{ n: string }>(`select count(*)::text n from legacy.${table}`)).rows[0].n)
-      summary.push({ table, source, copied, inserted: after - before })
+      summary.push({ table, source, copied: after, inserted: after - before })
       log(`[export] ${table}: source=${source} copied=${copied} inserted=${after - before} total=${after}`)
     }
   } finally {
@@ -120,7 +135,7 @@ async function main() {
   const args = process.argv.slice(2)
   const get = (f: string) => { const a = args.find(x => x.startsWith(`--${f}=`)); return a ? a.split('=')[1] : undefined }
   const summary = await exportLegacy({ tables: get('tables')?.split(','), page: get('page') ? Number(get('page')) : undefined })
-  const mismatched = summary.filter(s => s.source != null && s.source !== s.copied)
+  const mismatched = summary.filter(s => s.source != null && s.copied < s.source)
   console.log('\n| table | source rows | copied | inserted |\n|---|---|---|---|')
   for (const s of summary) console.log(`| ${s.table} | ${s.source ?? '?'} | ${s.copied} | ${s.inserted} |`)
   if (mismatched.length) { console.error(`[export] ${mismatched.length} table(s) copied fewer rows than the source reports`); process.exit(1) }
