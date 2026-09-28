@@ -38,9 +38,22 @@ if the owner holds a web/embedding license and wants exact Helvetica letterforms
 
 ## Internal identifiers that keep the old name (by design)
 
-- Domain `constellation.hoku.fm` (a 308 redirect block is prepared but commented out in `vercel.json`
-  for a future domain; `NEXT_PUBLIC_SITE_URL` is the single source of truth for canonical URLs, OG,
-  manifest, sitemap, robots, the ingestion User-Agent).
+- Domain `constellation.hoku.fm`. `NEXT_PUBLIC_SITE_URL` is the single source of truth for canonical
+  URLs, OG, manifest, sitemap, robots, and the ingestion User-Agent. When the product moves to a new
+  domain, add this block to `vercel.json` (JSON allows no comments, so it lives here) and set
+  `NEXT_PUBLIC_SITE_URL` to the new origin; 308 keeps method and body:
+
+  ```json
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "constellation.hoku.fm" }],
+      "destination": "https://insider.hoku.fm/:path*",
+      "permanent": true,
+      "statusCode": 308
+    }
+  ]
+  ```
 - Repository and package name `hoku-constellation`; Vercel project name.
 - launchd labels `fm.hoku.constellation.*`, `workers/` log names.
 - Environment variable names, Neon project/database names, PostHog project name if already created.
@@ -60,7 +73,7 @@ if the owner holds a web/embedding license and wants exact Helvetica letterforms
 
 ### Vercel
 - [ ] Project display name and OG preview; `NEXT_PUBLIC_SITE_URL` set in all environments.
-- [ ] Keep the project slug; add the future domain and uncomment the redirect block when ready.
+- [ ] Keep the project slug; add the future domain and the redirect block above when ready.
 
 ### PostHog
 - [ ] Project name "HOKU Insider" (the API key is unaffected).

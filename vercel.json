@@ -3,15 +3,5 @@
     { "path": "/api/analytics/admin/rebuild-graph", "schedule": "0 9 * * *" },
     { "path": "/api/analytics/admin/recompute-scores", "schedule": "0 10 * * *" },
     { "path": "/api/analytics/admin/detect-changes", "schedule": "0 * * * *" }
-  ],
-  "_comment_future_domain_redirect": "Uncomment and set the destination when the product moves off constellation.hoku.fm. 308 keeps method and body.",
-  "_redirects_disabled": [
-    {
-      "source": "/:path*",
-      "has": [{ "type": "host", "value": "constellation.hoku.fm" }],
-      "destination": "https://insider.hoku.fm/:path*",
-      "permanent": true,
-      "statusCode": 308
-    }
   ]
 }
