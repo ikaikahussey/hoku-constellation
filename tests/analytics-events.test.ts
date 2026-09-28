@@ -47,6 +47,7 @@ describe('analytics events', () => {
     expect(providers).toMatch(/autocapture:\s*false/)
     for (const route of ['admin', 'auth', 'account']) expect(providers).toMatch(new RegExp(`\\^\\\\/${route}`))
     expect(providers).toMatch(/resetAnalytics\(\)/)
+    expect(providers).toMatch(/<SpeedInsights \/>/)
     const nextConfig = readFileSync(join(ROOT, 'next.config.ts'), 'utf8')
     expect(nextConfig).toMatch(/source: '\/ingest\/:path\*'.*us\.i\.posthog\.com/)
     expect(nextConfig).toMatch(/skipTrailingSlashRedirect:\s*true/)

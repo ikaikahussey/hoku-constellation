@@ -18,7 +18,7 @@ export interface PgClientLike extends PgLike {
 }
 
 export function wrapPg(pool: PgPoolLike): Db {
-  return makeDb(pool, async fn => {
+  const tx = async <T,>(fn: (tx: Db) => Promise<T>): Promise<T> => {
     const client = await pool.connect()
     try {
       await client.query('begin')
@@ -31,18 +31,36 @@ export function wrapPg(pool: PgPoolLike): Db {
     } finally {
       client.release()
     }
-  }, () => pool.end())
+  }
+  return makeDb(pool, tx, () => pool.end(), { retryConnectionErrors: true })
+}
+
+/** Connection-level failures (idle connection dropped by Neon/PgBouncer, socket reset) — safe to retry once on a fresh pooled client. */
+export function isConnectionError(e: unknown): boolean {
+  const err = e as { code?: string; message?: string } | null
+  if (!err) return false
+  return ['ECONNRESET', 'EPIPE', 'ETIMEDOUT', '57P01', '08006', '08003'].includes(err.code ?? '') || /Connection terminated|terminating connection|socket hang up/i.test(err.message ?? '')
 }
 
 export function makeDb(
   conn: PgLike,
   transaction: <T>(fn: (tx: Db) => Promise<T>) => Promise<T>,
-  end: () => Promise<void>
+  end: () => Promise<void>,
+  opts: { retryConnectionErrors?: boolean } = {}
 ): Db {
   const db: Db = {
     async query<T>(text: string, params?: readonly unknown[]): Promise<QueryResult<T>> {
-      const res = await conn.query(text, params ? [...params] : undefined)
-      return { rows: res.rows as T[], rowCount: res.rowCount ?? res.rows.length }
+      const run = async () => {
+        const res = await conn.query(text, params ? [...params] : undefined)
+        return { rows: res.rows as T[], rowCount: res.rowCount ?? res.rows.length }
+      }
+      try { return await run() } catch (e) {
+        if (opts.retryConnectionErrors && isConnectionError(e)) {
+          await new Promise(r => setTimeout(r, 50)) // let the pool evict the dead client
+          return run()
+        }
+        throw e
+      }
     },
     async one<T>(text: string, params?: readonly unknown[]): Promise<T | null> {
       const res = await db.query<T>(text, params)

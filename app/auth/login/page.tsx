@@ -25,7 +25,7 @@ function LoginForm() {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const { error } = await getAuthClient().signIn.email({ email, password })
+    const { error } = await safe(() => getAuthClient().signIn.email({ email, password }))
     if (error) {
       setError(error.message ?? 'Sign-in failed.')
       setLoading(false)
@@ -38,7 +38,7 @@ function LoginForm() {
   async function handleGoogle() {
     setError('')
     const callbackURL = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
-    const { error } = await getAuthClient().signIn.social({ provider: 'google', callbackURL })
+    const { error } = await safe(() => getAuthClient().signIn.social({ provider: 'google', callbackURL }))
     if (error) setError(error.message ?? 'Google sign-in failed.')
   }
 
@@ -57,6 +57,11 @@ function LoginForm() {
       <p className="mt-4 text-center text-sm"><Link href="/auth/reset-password">Forgot your password?</Link></p>
     </>
   )
+}
+
+/** Client calls throw when NEXT_PUBLIC_NEON_AUTH_URL is missing or the network is down; surface that as a form error. */
+async function safe<T extends { data?: unknown; error?: { message?: string } | null }>(fn: () => Promise<T>): Promise<{ error: { message?: string } | null; data: T['data'] | null }> {
+  try { const r = await fn(); return { error: r.error ?? null, data: r.data ?? null } } catch (e) { return { error: { message: (e as Error).message || 'Something went wrong. Please try again.' }, data: null } }
 }
 
 export default function LoginPage() {

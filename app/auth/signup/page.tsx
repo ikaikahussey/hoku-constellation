@@ -24,7 +24,7 @@ function SignupForm() {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const { data, error } = await getAuthClient().signUp.email({ email, password, name })
+    const { data, error } = await safe(() => getAuthClient().signUp.email({ email, password, name }))
     if (error) {
       setError(error.message ?? 'Could not create your account.')
       setLoading(false)
@@ -43,7 +43,7 @@ function SignupForm() {
   async function handleGoogle() {
     setError('')
     const callbackURL = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
-    const { error } = await getAuthClient().signIn.social({ provider: 'google', callbackURL })
+    const { error } = await safe(() => getAuthClient().signIn.social({ provider: 'google', callbackURL }))
     if (error) setError(error.message ?? 'Google sign-in failed.')
   }
 
@@ -76,6 +76,11 @@ function SignupForm() {
       <p className="mt-4 text-xs text-muted text-center">By creating an account you agree to the <Link href="/terms">Terms</Link> and <Link href="/privacy">Privacy Policy</Link>.</p>
     </>
   )
+}
+
+/** Client calls throw when NEXT_PUBLIC_NEON_AUTH_URL is missing or the network is down; surface that as a form error. */
+async function safe<T extends { data?: unknown; error?: { message?: string } | null }>(fn: () => Promise<T>): Promise<{ error: { message?: string } | null; data: T['data'] | null }> {
+  try { const r = await fn(); return { error: r.error ?? null, data: r.data ?? null } } catch (e) { return { error: { message: (e as Error).message || 'Something went wrong. Please try again.' }, data: null } }
 }
 
 export default function SignupPage() {

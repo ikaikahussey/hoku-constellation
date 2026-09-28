@@ -10,8 +10,9 @@
 import type { Db } from './types'
 import { wrapPg, type PgPoolLike } from './pg-adapter'
 
-let cached: Db | null = null
-let override: Db | null = null
+// One pool per process even when the bundler instantiates this module once per route chunk
+// (Next.js/Turbopack does): otherwise every route group opens its own connections.
+const g = globalThis as unknown as { __hokuServiceDb?: Db | null; __hokuServiceDbOverride?: Db | null }
 
 export function getDatabaseUrl(): string {
   const url = process.env.DATABASE_URL
@@ -36,27 +37,27 @@ async function createPool(): Promise<PgPoolLike> {
     return new Pool({ connectionString, max: 5 }) as unknown as PgPoolLike
   }
   const { Pool } = await import('pg')
-  return new Pool({ connectionString, max: Number(process.env.PG_POOL_MAX ?? 8) }) as unknown as PgPoolLike
+  return new Pool({ connectionString, max: Number(process.env.PG_POOL_MAX ?? 8), idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS ?? 30_000) }) as unknown as PgPoolLike
 }
 
 /**
  * Pooled direct connection with a typed query helper. Lazily created once per process.
  */
 export async function getServiceDb(): Promise<Db> {
-  if (override) return override
-  if (!cached) cached = wrapPg(await createPool())
-  return cached
+  if (g.__hokuServiceDbOverride) return g.__hokuServiceDbOverride
+  if (!g.__hokuServiceDb) g.__hokuServiceDb = wrapPg(await createPool())
+  return g.__hokuServiceDb
 }
 
 /** Test hook: route getServiceDb() to an in-process database. */
 export function setServiceDbForTests(db: Db | null): void {
-  override = db
+  g.__hokuServiceDbOverride = db
 }
 
 /** Close the pool (workers/CLIs call this before exit). */
 export async function closeServiceDb(): Promise<void> {
-  if (cached) {
-    await cached.end()
-    cached = null
+  if (g.__hokuServiceDb) {
+    await g.__hokuServiceDb.end()
+    g.__hokuServiceDb = null
   }
 }

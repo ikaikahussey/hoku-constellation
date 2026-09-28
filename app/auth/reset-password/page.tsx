@@ -20,7 +20,7 @@ function RequestForm() {
     setLoading(true)
     setError('')
     const redirectTo = `${window.location.origin}/auth/reset-password`
-    const { error } = await getAuthClient().requestPasswordReset({ email, redirectTo })
+    const { error } = await safe(() => getAuthClient().requestPasswordReset({ email, redirectTo }))
     if (error) {
       setError(error.message ?? 'Could not send a reset link.')
       setLoading(false)
@@ -64,7 +64,7 @@ function ResetForm({ token }: { token: string }) {
     }
     setLoading(true)
     setError('')
-    const { error } = await getAuthClient().resetPassword({ newPassword: password, token })
+    const { error } = await safe(() => getAuthClient().resetPassword({ newPassword: password, token }))
     if (error) {
       setError(error.message ?? 'Could not reset your password. The link may have expired.')
       setLoading(false)
@@ -94,6 +94,11 @@ function ResetPasswordInner() {
       {token && !invalid ? <ResetForm token={token} /> : <RequestForm />}
     </>
   )
+}
+
+/** Client calls throw when NEXT_PUBLIC_NEON_AUTH_URL is missing or the network is down; surface that as a form error. */
+async function safe<T extends { data?: unknown; error?: { message?: string } | null }>(fn: () => Promise<T>): Promise<{ error: { message?: string } | null; data: T['data'] | null }> {
+  try { const r = await fn(); return { error: r.error ?? null, data: r.data ?? null } } catch (e) { return { error: { message: (e as Error).message || 'Something went wrong. Please try again.' }, data: null } }
 }
 
 export default function ResetPasswordPage() {

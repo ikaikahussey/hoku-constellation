@@ -1,0 +1,56 @@
+import { test, expect } from '@playwright/test'
+
+test.describe('smoke', () => {
+  test('home renders the HOKU Insider wordmark and primary navigation', async ({ page }) => {
+    await page.goto('/')
+    await expect(page).toHaveTitle(/HOKU Insider/)
+    await expect(page.getByRole('banner').getByRole('link', { name: /HOKU Insider home/i })).toBeVisible()
+    for (const name of ['Search', 'Explore', 'Pricing']) await expect(page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name })).toBeVisible()
+    await expect(page.locator('body')).not.toContainText(/Constellation/)
+  })
+  test('search finds a seeded person and the profile renders public sections', async ({ page }) => {
+    await page.goto('/search?q=green')
+    await expect(page.getByRole('link', { name: /Josh Green/ }).first()).toBeVisible()
+    await page.getByRole('link', { name: /Josh Green/ }).first().click()
+    await expect(page).toHaveURL(/\/person\/josh-green/)
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Josh Green')
+    await expect(page.getByText('Governor').first()).toBeVisible()
+  })
+  test('gated money data shows a paywall to anonymous visitors', async ({ page }) => {
+    await page.goto('/person/josh-green')
+    await page.getByRole('tab', { name: /Money/ }).click().catch(() => {})
+    await expect(page.getByRole('link', { name: /Subscribe|See plans|Pricing/i }).first()).toBeVisible()
+    await expect(page.locator('body')).not.toContainText('2,000')
+  })
+  test('organization and bill pages render', async ({ page }) => {
+    await page.goto('/org/hawaiian-electric-industries')
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Hawaiian Electric Industries')
+    await expect(page.getByText('Scott Seu')).toBeVisible()
+    await page.goto('/bills/00000000-0000-4000-8000-000000000004')
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('SB1234')
+    await expect(page.getByText('Josh Green')).toBeVisible()
+  })
+  test('pricing, privacy and terms are reachable; unknown slug is a 404', async ({ page }) => {
+    for (const path of ['/pricing', '/privacy', '/terms', '/explore']) {
+      const res = await page.goto(path)
+      expect(res?.status(), path).toBe(200)
+    }
+    await page.goto('/privacy')
+    await expect(page.getByText('PostHog', { exact: true }).first()).toBeVisible()
+    const missing = await page.goto('/person/no-such-person-xyz')
+    expect(missing?.status()).toBe(404)
+  })
+  test('protected routes redirect anonymous visitors to login', async ({ page }) => {
+    await page.goto('/account')
+    await expect(page).toHaveURL(/\/auth\/login/)
+    await page.goto('/admin')
+    await expect(page).toHaveURL(/\/auth\/login/)
+  })
+  test('API v1 refuses anonymous callers and analytics admin refuses without the cron secret', async ({ request }) => {
+    expect((await request.get('/api/v1/search?q=green')).status()).toBeGreaterThanOrEqual(401)
+    expect((await request.post('/api/analytics/admin/rebuild-graph')).status()).toBe(401)
+    const search = await request.get('/api/search?q=green')
+    expect(search.ok()).toBeTruthy()
+    expect(JSON.stringify(await search.json())).toContain('Josh Green')
+  })
+})
