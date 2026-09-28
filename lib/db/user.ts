@@ -13,8 +13,10 @@ export type UserClient = NeonPostgrestClient
 
 export function getDataApiUrl(): string {
   const url = process.env.NEXT_PUBLIC_NEON_DATA_API_URL
-  if (!url) throw new Error('NEXT_PUBLIC_NEON_DATA_API_URL is not set')
-  return url
+  if (url) return url
+  const auth = process.env.NEXT_PUBLIC_NEON_AUTH_URL ?? process.env.NEON_AUTH_BASE_URL
+  if (!auth) throw new Error('NEXT_PUBLIC_NEON_DATA_API_URL is not set')
+  return auth.replace('.neonauth.', '.apirest.').replace(/\/auth\/?$/, '/rest/v1')
 }
 
 export function getAuthUrl(): string {

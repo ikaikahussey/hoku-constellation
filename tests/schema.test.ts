@@ -137,3 +137,11 @@ describe('zod attribute schemas', () => {
     expect(edgeInsertSchema.safeParse({ type: 'owns', from_name_raw: 'A', to_name_raw: 'B', document_id: doc, match_confidence: 1.7 }).success).toBe(false)
   })
 })
+
+describe('Neon URL derivation', () => {
+  it('derives the Data API URL from the Auth URL', async () => {
+    const { deriveDataApiUrl } = await import('@/lib/db/browser')
+    expect(deriveDataApiUrl('https://ep-wild-hall-b8xj7vav.neonauth.c-14.us-east-1.aws.neon.tech/neondb/auth'))
+      .toBe('https://ep-wild-hall-b8xj7vav.apirest.c-14.us-east-1.aws.neon.tech/neondb/rest/v1')
+  })
+})
