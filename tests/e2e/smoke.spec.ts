@@ -16,6 +16,18 @@ test.describe('smoke', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Josh Green')
     await expect(page.getByText('Governor').first()).toBeVisible()
   })
+  test('explore categories are fixed URLs that list their members', async ({ page }) => {
+    await page.goto('/explore')
+    await page.getByRole('link', { name: 'Oʻahu' }).click()
+    await expect(page).toHaveURL(/\/explore\/oahu$/)
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Oʻahu')
+    await expect(page.getByRole('link', { name: /Josh Green/ })).toBeVisible()
+    await expect(page.getByRole('link', { name: /Hawaiian Electric Industries/ })).toBeVisible()
+    const energy = await page.goto('/explore/energy')
+    expect(energy?.status()).toBe(200)
+    await expect(page.getByRole('link', { name: /Hawaiian Electric Industries/ })).toBeVisible()
+    expect((await page.goto('/explore/no-such-category'))?.status()).toBe(404)
+  })
   test('gated money data shows a paywall to anonymous visitors', async ({ page }) => {
     await page.goto('/person/josh-green')
     await page.getByRole('tab', { name: /Money/ }).click().catch(() => {})

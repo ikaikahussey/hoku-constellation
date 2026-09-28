@@ -20,22 +20,42 @@ export async function getEntitiesByIds(db: Db, ids: string[]): Promise<Map<strin
 }
 
 export interface ListEntitiesOptions {
-  kind?: EntityRow['kind']
+  kind?: EntityRow['kind'] | EntityRow['kind'][]
   q?: string
   featured?: boolean
   status?: string
+  /** person.attributes.entity_types overlaps any of these values */
+  entityTypes?: string[]
+  /** person.attributes.office_held ILIKE any of these patterns */
+  officeHeldLike?: string[]
+  /** org.attributes.sector, compared case-insensitively with spaces/hyphens folded to underscores */
+  sector?: string
+  /** attributes.island equals any of these values (case-insensitive) */
+  island?: string[]
   limit?: number
   offset?: number
   orderBy?: 'updated_at' | 'name' | 'created_at'
 }
 
+/** `Real Estate` / `real-estate` / `real_estate` → `real_estate` */
+export function foldToken(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
 export async function listEntities(db: Db, opts: ListEntitiesOptions = {}): Promise<{ rows: EntityRow[]; total: number }> {
   const where: string[] = ['merged_into_id is null']
   const params: unknown[] = []
-  if (opts.kind) { params.push(opts.kind); where.push(`kind = $${params.length}`) }
+  if (opts.kind) {
+    const kinds = Array.isArray(opts.kind) ? opts.kind : [opts.kind]
+    params.push(kinds); where.push(`kind = any($${params.length}::text[])`)
+  }
   if (opts.q) { params.push(`%${opts.q}%`); where.push(`(name ilike $${params.length} or exists (select 1 from unnest(aliases) a where a ilike $${params.length}))`) }
   if (opts.featured !== undefined) { params.push(opts.featured); where.push(`coalesce((attributes ->> 'is_featured')::boolean, false) = $${params.length}`) }
   if (opts.status) { params.push(opts.status); where.push(`attributes ->> 'status' = $${params.length}`) }
+  if (opts.entityTypes?.length) { params.push(opts.entityTypes); where.push(`(attributes -> 'entity_types') ?| $${params.length}::text[]`) }
+  if (opts.officeHeldLike?.length) { params.push(opts.officeHeldLike); where.push(`(attributes ->> 'office_held') ilike any($${params.length}::text[])`) }
+  if (opts.sector) { params.push(foldToken(opts.sector)); where.push(`lower(regexp_replace(attributes ->> 'sector', '[\\s-]+', '_', 'g')) = $${params.length}`) }
+  if (opts.island?.length) { params.push(opts.island.map(i => i.toLowerCase())); where.push(`lower(attributes ->> 'island') = any($${params.length}::text[])`) }
   const order = opts.orderBy === 'name' ? 'name asc' : opts.orderBy === 'created_at' ? 'created_at desc' : 'updated_at desc'
   const limit = Math.min(opts.limit ?? 25, 500)
   const offset = opts.offset ?? 0

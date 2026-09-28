@@ -91,4 +91,4 @@ async function main() {
   }
 }
 
-main().then(() => process.exit(0)).catch((e) => { console.error(e.message); process.exit(1) })
+if (process.argv[1]?.endsWith('create-dashboards.ts')) main().then(() => process.exit(0)).catch((e) => { console.error(e.message); process.exit(1) })
