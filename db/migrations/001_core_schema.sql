@@ -113,8 +113,11 @@ create table if not exists summary (
   check (num_nonnulls(entity_id, edge_id, document_id) = 1)
 );
 
--- Neon Auth users live in neon_auth."user" (id text). The FK is added conditionally below so this
--- file also applies on branches/test databases where Neon Auth has not been provisioned.
+-- Neon Auth users live in neon_auth."user". user_id is kept as text because auth.user_id() (the JWT
+-- `sub`) is text and every RLS policy compares against it. The FK is added conditionally below: only
+-- when Neon Auth is provisioned and its id column is text; on projects where Neon Auth uses uuid ids
+-- the FK is skipped (a uuid → text FK cannot be declared) and orphan rows are prevented by
+-- ensureUserAccount() creating rows only from a verified session.
 create table if not exists user_account (
   user_id text primary key,                  -- Neon Auth user id
   subscription_tier text not null default 'free'
@@ -130,7 +133,8 @@ create table if not exists user_account (
 
 do $$
 begin
-  if exists (select 1 from information_schema.tables where table_schema = 'neon_auth' and table_name = 'user')
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'neon_auth' and table_name = 'user' and column_name = 'id' and data_type = 'text')
      and not exists (select 1 from pg_constraint where conname = 'user_account_user_id_fkey') then
     execute 'alter table user_account add constraint user_account_user_id_fkey
              foreign key (user_id) references neon_auth."user"(id) on delete cascade';
