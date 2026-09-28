@@ -8,6 +8,7 @@ export const IMPORTERS: Record<string, () => Promise<SourceModule>> = {
   csc: () => import('./csc'),
   ethics_lobbyists: () => import('./ethics-lobbyists'),
   capitol_measures: () => import('./capitol-measures'),
+  capitol_testimony: () => import('./capitol-testimony'),
   employee_compensation: () => import('./employee-compensation'),
 }
 
