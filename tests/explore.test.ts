@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createTestDb, type TestDb } from './helpers/pglite'
-import { listEntities, foldToken } from '@/lib/db/queries/entities'
-import { EXPLORE_CATEGORIES, categoriesInGroup, categoryKinds, exploreHref, getExploreCategory } from '@/lib/explore/categories'
+import { listEntities, countEntities, foldToken } from '@/lib/db/queries/entities'
+import { EXPLORE_CATEGORIES, categoriesInGroup, categoryListOptions, exploreHref, getExploreCategory } from '@/lib/explore/categories'
 
 let db: TestDb
 
@@ -16,7 +16,8 @@ beforeAll(async () => {
       ('org', 'Hawaiian Electric', '{"slug":"hawaiian-electric","org_type":"corporation","sector":"Energy","island":"Oahu"}'),
       ('org', 'Alexander & Baldwin','{"slug":"alexander-baldwin","org_type":"corporation","sector":"real_estate","island":"Maui"}'),
       ('org', 'Kauaʻi Realty',      '{"slug":"kauai-realty","org_type":"corporation","sector":"Real-Estate","island":"Kauai"}'),
-      ('org', 'Sector-less Org',    '{"slug":"no-sector","org_type":"nonprofit"}');
+      ('org', 'Sector-less Org',    '{"slug":"no-sector","org_type":"nonprofit"}'),
+      ('org', 'Hawaii Gas',         '{"slug":"hawaii-gas","org_type":"corporation","sector":"Electric Services","island":"Oʻahu"}');
     update entity set merged_into_id = (select id from entity where name = 'Josh Green') where name = 'Merged Person';
   `)
 })
@@ -39,18 +40,20 @@ describe('listEntities attribute filters', () => {
     expect(foldToken('real-estate')).toBe('real_estate')
     expect(names((await listEntities(db, { kind: 'org', sector: 'real_estate' })).rows)).toEqual(['Alexander & Baldwin', 'Kauaʻi Realty'])
     expect(names((await listEntities(db, { kind: 'org', sector: 'energy' })).rows)).toEqual(['Hawaiian Electric'])
+    expect(names((await listEntities(db, { kind: 'org', sector: ['energy', 'electric services'] })).rows)).toEqual(['Hawaii Gas', 'Hawaiian Electric'])
+    expect(await countEntities(db, { kind: 'org', sector: ['energy', 'electric services'] })).toBe(2)
   })
   it('filters by island across kinds and accepts spelling variants', async () => {
     const { rows } = await listEntities(db, { kind: ['person', 'org'], island: ['Oahu', 'Oʻahu'], orderBy: 'name' })
-    expect(names(rows)).toEqual(['Hawaiian Electric', 'Josh Green', 'Leo Asuncion', 'Rick Blangiardi'])
+    expect(names(rows)).toEqual(['Hawaii Gas', 'Hawaiian Electric', 'Josh Green', 'Leo Asuncion', 'Rick Blangiardi'])
   })
   it('paginates with a stable total', async () => {
     const first = await listEntities(db, { kind: ['person', 'org'], island: ['Oahu', 'Oʻahu'], orderBy: 'name', limit: 3, offset: 0 })
     const second = await listEntities(db, { kind: ['person', 'org'], island: ['Oahu', 'Oʻahu'], orderBy: 'name', limit: 3, offset: 3 })
     expect(first.rows).toHaveLength(3)
-    expect(second.rows).toHaveLength(1)
-    expect(first.total).toBe(4)
-    expect(second.total).toBe(4)
+    expect(second.rows).toHaveLength(2)
+    expect(first.total).toBe(5)
+    expect(second.total).toBe(5)
   })
 })
 
@@ -75,17 +78,18 @@ describe('explore categories', () => {
       'appointed-officials': ['Leo Asuncion'],
       'county-mayors': ['Rick Blangiardi'],
       'puc-commissioners': ['Leo Asuncion'],
-      energy: ['Hawaiian Electric'],
+      energy: ['Hawaii Gas', 'Hawaiian Electric'],
       'real-estate': ['Alexander & Baldwin', 'Kauaʻi Realty'],
       healthcare: [], tourism: [], construction: [], finance: [],
-      oahu: ['Hawaiian Electric', 'Josh Green', 'Leo Asuncion', 'Rick Blangiardi'],
+      oahu: ['Hawaii Gas', 'Hawaiian Electric', 'Josh Green', 'Leo Asuncion', 'Rick Blangiardi'],
       maui: ['Alexander & Baldwin'],
       'hawaii-island': [],
       kauai: ['Kauaʻi Realty'],
     }
     for (const c of EXPLORE_CATEGORIES) {
-      const { rows } = await listEntities(db, { kind: categoryKinds(c), ...c.filter, orderBy: 'name' })
+      const { rows, total } = await listEntities(db, { ...categoryListOptions(c), orderBy: 'name' })
       expect(names(rows), c.slug).toEqual(expected[c.slug])
+      expect(await countEntities(db, categoryListOptions(c)), c.slug).toBe(total)
     }
   })
 })

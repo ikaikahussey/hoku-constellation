@@ -1,12 +1,12 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getServiceDb } from '@/lib/db/service'
-import { listEntities } from '@/lib/db/queries'
+import { listEntities, countEntities } from '@/lib/db/queries'
 import type { EntityRow } from '@/lib/db/types'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
 import { attr } from '@/components/profile/edges'
-import { categoriesInGroup, exploreHref } from '@/lib/explore/categories'
+import { EXPLORE_CATEGORIES, categoriesInGroup, categoryListOptions, exploreHref } from '@/lib/explore/categories'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,11 +29,17 @@ function EntityTile({ e }: { e: EntityRow }) {
 
 export default async function ExplorePage() {
   const db = await getServiceDb()
-  const [featuredPeople, featuredOrgs, recentPeople] = await Promise.all([
+  const [featuredPeople, featuredOrgs, recentPeople, counts] = await Promise.all([
     listEntities(db, { kind: 'person', featured: true, status: 'active', limit: 8, orderBy: 'name' }),
     listEntities(db, { kind: 'org', featured: true, status: 'active', limit: 8, orderBy: 'name' }),
     listEntities(db, { kind: 'person', limit: 5, orderBy: 'created_at' }),
+    Promise.all(EXPLORE_CATEGORIES.map(async c => [c.slug, await countEntities(db, categoryListOptions(c))] as const)),
   ])
+  const countFor = new Map<string, number>(counts)
+  const Count = ({ slug }: { slug: string }) => {
+    const n = countFor.get(slug) ?? 0
+    return <span className="text-sm text-muted tabular ml-2">{n.toLocaleString('en-US')}</span>
+  }
 
   return (
     <>
@@ -47,6 +53,7 @@ export default async function ExplorePage() {
             {categoriesInGroup('office').map(item => (
               <li key={item.slug} className="card border border-rule p-4 hover:border-ink transition-colors">
                 <Link href={exploreHref(item.slug)} className="font-bold">{item.label}</Link>
+                <Count slug={item.slug} />
               </li>
             ))}
           </ul>
@@ -57,7 +64,7 @@ export default async function ExplorePage() {
           <ul className="flex flex-wrap gap-2">
             {categoriesInGroup('sector').map(item => (
               <li key={item.slug}>
-                <Link href={exploreHref(item.slug)} className="link-quiet inline-block border border-ink px-4 py-2 text-sm">{item.label}</Link>
+                <Link href={exploreHref(item.slug)} className="link-quiet inline-block border border-ink px-4 py-2 text-sm">{item.label}<span className="text-muted tabular ml-2">{(countFor.get(item.slug) ?? 0).toLocaleString('en-US')}</span></Link>
               </li>
             ))}
           </ul>
@@ -69,6 +76,7 @@ export default async function ExplorePage() {
             {categoriesInGroup('island').map(island => (
               <li key={island.slug} className="card border border-rule p-4 hover:border-ink transition-colors">
                 <Link href={exploreHref(island.slug)} className="font-bold">{island.label}</Link>
+                <Count slug={island.slug} />
               </li>
             ))}
           </ul>

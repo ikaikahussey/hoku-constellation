@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { getServiceDb } from '@/lib/db/service'
 import { listEntities } from '@/lib/db/queries'
-import { GROUP_LABEL, categoriesInGroup, categoryKinds, exploreHref, getExploreCategory } from '@/lib/explore/categories'
+import { GROUP_LABEL, categoriesInGroup, categoryListOptions, exploreHref, getExploreCategory } from '@/lib/explore/categories'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
 import { EntityCard, entityRowToCard } from '@/components/search/EntityCard'
@@ -39,8 +39,7 @@ export default async function ExploreCategoryPage({ params, searchParams }: Prop
   const page = pageNumber(rawPage)
   const db = await getServiceDb()
   const { rows, total } = await listEntities(db, {
-    kind: categoryKinds(category),
-    ...category.filter,
+    ...categoryListOptions(category),
     orderBy: 'name',
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,

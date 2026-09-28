@@ -28,8 +28,8 @@ export interface ListEntitiesOptions {
   entityTypes?: string[]
   /** person.attributes.office_held ILIKE any of these patterns */
   officeHeldLike?: string[]
-  /** org.attributes.sector, compared case-insensitively with spaces/hyphens folded to underscores */
-  sector?: string
+  /** org.attributes.sector matches any of these, compared case-insensitively with spaces/hyphens folded to underscores */
+  sector?: string | string[]
   /** attributes.island equals any of these values (case-insensitive) */
   island?: string[]
   limit?: number
@@ -42,7 +42,7 @@ export function foldToken(value: string): string {
   return value.trim().toLowerCase().replace(/[\s-]+/g, '_')
 }
 
-export async function listEntities(db: Db, opts: ListEntitiesOptions = {}): Promise<{ rows: EntityRow[]; total: number }> {
+function buildWhere(opts: ListEntitiesOptions): { where: string; params: unknown[] } {
   const where: string[] = ['merged_into_id is null']
   const params: unknown[] = []
   if (opts.kind) {
@@ -54,12 +54,26 @@ export async function listEntities(db: Db, opts: ListEntitiesOptions = {}): Prom
   if (opts.status) { params.push(opts.status); where.push(`attributes ->> 'status' = $${params.length}`) }
   if (opts.entityTypes?.length) { params.push(opts.entityTypes); where.push(`(attributes -> 'entity_types') ?| $${params.length}::text[]`) }
   if (opts.officeHeldLike?.length) { params.push(opts.officeHeldLike); where.push(`(attributes ->> 'office_held') ilike any($${params.length}::text[])`) }
-  if (opts.sector) { params.push(foldToken(opts.sector)); where.push(`lower(regexp_replace(attributes ->> 'sector', '[\\s-]+', '_', 'g')) = $${params.length}`) }
+  if (opts.sector) {
+    const sectors = (Array.isArray(opts.sector) ? opts.sector : [opts.sector]).map(foldToken)
+    params.push(sectors); where.push(`lower(regexp_replace(attributes ->> 'sector', '[\\s-]+', '_', 'g')) = any($${params.length}::text[])`)
+  }
   if (opts.island?.length) { params.push(opts.island.map(i => i.toLowerCase())); where.push(`lower(attributes ->> 'island') = any($${params.length}::text[])`) }
+  return { where: where.join(' and '), params }
+}
+
+/** Number of entities matching the same filters `listEntities` accepts. */
+export async function countEntities(db: Db, opts: ListEntitiesOptions = {}): Promise<number> {
+  const { where, params } = buildWhere(opts)
+  const row = await db.one<{ n: string }>(`select count(*)::text n from entity where ${where}`, params)
+  return Number(row?.n ?? 0)
+}
+
+export async function listEntities(db: Db, opts: ListEntitiesOptions = {}): Promise<{ rows: EntityRow[]; total: number }> {
+  const { where: sqlWhere, params } = buildWhere(opts)
   const order = opts.orderBy === 'name' ? 'name asc' : opts.orderBy === 'created_at' ? 'created_at desc' : 'updated_at desc'
   const limit = Math.min(opts.limit ?? 25, 500)
   const offset = opts.offset ?? 0
-  const sqlWhere = where.join(' and ')
   const total = await db.one<{ n: string }>(`select count(*)::text n from entity where ${sqlWhere}`, params)
   params.push(limit, offset)
   const rows = await db.many<EntityRow>(

@@ -31,12 +31,12 @@ export const EXPLORE_CATEGORIES: readonly ExploreCategory[] = [
     description: 'Members of the Hawaiʻi Public Utilities Commission.',
     filter: { officeHeldLike: ['%public utilities commission%', '%puc %', '%puc'] } },
   // ---- by sector (organizations)
-  { slug: 'energy', label: 'Energy', group: 'sector', kind: 'org', description: 'Utilities, fuel, and renewable-energy organizations.', filter: { sector: 'energy' } },
-  { slug: 'real-estate', label: 'Real estate', group: 'sector', kind: 'org', description: 'Developers, landowners, and property companies.', filter: { sector: 'real_estate' } },
-  { slug: 'healthcare', label: 'Healthcare', group: 'sector', kind: 'org', description: 'Hospitals, insurers, and health systems.', filter: { sector: 'healthcare' } },
-  { slug: 'tourism', label: 'Tourism', group: 'sector', kind: 'org', description: 'Hotels, resorts, airlines, and visitor-industry groups.', filter: { sector: 'tourism' } },
-  { slug: 'construction', label: 'Construction', group: 'sector', kind: 'org', description: 'Contractors, engineering firms, and building trades.', filter: { sector: 'construction' } },
-  { slug: 'finance', label: 'Finance', group: 'sector', kind: 'org', description: 'Banks, insurers, and investment firms.', filter: { sector: 'finance' } },
+  { slug: 'energy', label: 'Energy', group: 'sector', kind: 'org', description: 'Utilities, fuel, and renewable-energy organizations.', filter: { sector: ['energy', 'electric_services', 'utilities', 'renewable_energy', 'oil_and_gas'] } },
+  { slug: 'real-estate', label: 'Real estate', group: 'sector', kind: 'org', description: 'Developers, landowners, and property companies.', filter: { sector: ['real_estate', 'real_estate_development', 'development', 'property'] } },
+  { slug: 'healthcare', label: 'Healthcare', group: 'sector', kind: 'org', description: 'Hospitals, insurers, and health systems.', filter: { sector: ['healthcare', 'health_care', 'health', 'medical', 'hospital'] } },
+  { slug: 'tourism', label: 'Tourism', group: 'sector', kind: 'org', description: 'Hotels, resorts, airlines, and visitor-industry groups.', filter: { sector: ['tourism', 'hospitality', 'travel', 'visitor_industry'] } },
+  { slug: 'construction', label: 'Construction', group: 'sector', kind: 'org', description: 'Contractors, engineering firms, and building trades.', filter: { sector: ['construction', 'contractor', 'engineering', 'building'] } },
+  { slug: 'finance', label: 'Finance', group: 'sector', kind: 'org', description: 'Banks, insurers, and investment firms.', filter: { sector: ['finance', 'financial_services', 'banking', 'insurance', 'investment'] } },
   // ---- by island (people and organizations)
   { slug: 'oahu', label: 'Oʻahu', group: 'island', kind: 'person', description: 'People and organizations based on Oʻahu.', filter: { island: ['Oahu', 'Oʻahu', 'O‘ahu'] } },
   { slug: 'maui', label: 'Maui', group: 'island', kind: 'person', description: 'People and organizations based on Maui.', filter: { island: ['Maui'] } },
@@ -56,6 +56,11 @@ export function categoriesInGroup(group: ExploreGroup): ExploreCategory[] {
 
 export function exploreHref(slug: string): string {
   return `/explore/${slug}`
+}
+
+/** `listEntities` / `countEntities` options for a category. */
+export function categoryListOptions(c: ExploreCategory): ListEntitiesOptions {
+  return { kind: categoryKinds(c), ...c.filter }
 }
 
 /** Island categories list people and organizations; office and sector categories list one kind. */
