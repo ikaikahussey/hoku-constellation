@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   },
   description:
     'HOKU Insider maps the people, money, and connections behind every major decision in Hawaiʻi. A searchable database of elected officials, lobbyists, donors, and organizations.',
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://constellation.hoku.fm'),
+  metadataBase: new URL((process.env.NEXT_PUBLIC_SITE_URL || 'https://constellation.hoku.fm').trim()),
   icons: '/icon.svg',
   openGraph: {
     siteName: 'HOKU Insider',

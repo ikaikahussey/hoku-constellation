@@ -10,7 +10,9 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-export const USER_AGENT = `HokuInsiderBot/1.0 (+${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://constellation.hoku.fm'})`
+/** Env values are trimmed: a trailing newline in a dashboard-pasted value makes the header invalid. */
+export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://constellation.hoku.fm').trim()
+export const USER_AGENT = `HokuInsiderBot/1.0 (+${SITE_URL})`
 
 export interface FetchOptions {
   method?: 'GET' | 'POST'
