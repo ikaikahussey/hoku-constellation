@@ -6,34 +6,54 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@neondatabase/auth": "^0.5.0-beta",
+    "@neondatabase/neon-js": "^0.7.0-beta",
+    "@neondatabase/serverless": "^1.1.0",
     "@stripe/stripe-js": "^9.1.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.103.0",
+    "@types/ws": "^8.18.1",
     "@vercel/og": "^0.11.1",
+    "@vercel/speed-insights": "^2.0.0",
+    "cheerio": "^1.2.0",
     "csv-parse": "^6.2.1",
     "d3": "^7.9.0",
     "fuse.js": "^7.3.0",
     "next": "16.2.3",
+    "pg": "^8.23.0",
+    "posthog-js": "^1.434.15",
+    "posthog-node": "^5.54.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
     "recharts": "^3.8.1",
     "remark-gfm": "^4.0.1",
-    "stripe": "^22.0.1"
+    "stripe": "^22.0.1",
+    "unpdf": "^1.8.1",
+    "ws": "^8.22.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@electric-sql/pglite": "^0.3.14",
+    "@playwright/test": "^1.56.0",
     "@tailwindcss/postcss": "^4",
     "@types/d3": "^7.4.3",
     "@types/node": "^20",
+    "@types/pg": "^8.15.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
     "supabase": "^2.89.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "tsx": "^4.20.6",
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }
