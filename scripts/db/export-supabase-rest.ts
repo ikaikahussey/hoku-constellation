@@ -97,10 +97,14 @@ export async function exportLegacy(opts: { tables?: string[]; page?: number; log
   const summary: Array<{ table: string; source: number | null; copied: number; inserted: number }> = []
   try {
     await client.query(`create schema if not exists legacy`)
-    await client.query(`set search_path to legacy, public`)
-    await client.query(legacySchemaSql())
-    await client.query(`set search_path to public`)
-    log('[export] legacy schema ready')
+    const present = await client.query(`select 1 from information_schema.tables where table_schema = 'legacy' and table_name = 'person'`)
+    if (present.rowCount) log('[export] legacy schema already present, reusing')
+    else {
+      await client.query(`set search_path to legacy, public`)
+      await client.query(legacySchemaSql())
+      await client.query(`set search_path to public`)
+      log('[export] legacy schema created')
+    }
     for (const table of opts.tables ?? LEGACY_TABLES) {
       const exists = await client.query(`select 1 from information_schema.tables where table_schema = 'legacy' and table_name = $1`, [table])
       if (!exists.rowCount) { log(`[export] ${table}: not in legacy schema, skipped`); continue }
