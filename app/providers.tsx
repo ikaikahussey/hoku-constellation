@@ -8,7 +8,7 @@ import { SpeedInsights } from '@vercel/speed-insights/next'
 import { identifyUser, resetAnalytics } from '@/lib/analytics-events'
 
 const KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY
-const RECORDING_EXCLUDED = [/^\/admin(\/|$)/, /^\/auth(\/|$)/]
+const RECORDING_EXCLUDED = [/^\/admin(\/|$)/, /^\/auth(\/|$)/, /^\/account(\/|$)/]
 
 let initialized = false
 function initPostHog() {
