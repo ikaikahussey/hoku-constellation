@@ -13,6 +13,7 @@ export const IMPORTERS: Record<string, () => Promise<SourceModule>> = {
   spo_hands: () => import('./spo-hands'),
   puc: () => import('./puc'),
   fec: () => import('./fec'),
+  usaspending: () => import('./usaspending'),
   employee_compensation: () => import('./employee-compensation'),
 }
 
