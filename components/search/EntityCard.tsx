@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Badge } from '@/components/ui/Badge'
-import type { EntityKind } from '@/lib/db/types'
+import type { EntityKind, EntityRow } from '@/lib/db/types'
 
 export interface EntityCardProps {
   id: string
@@ -20,6 +20,24 @@ const KIND_LABEL: Record<EntityKind, string> = {
   docket: 'Docket',
   parcel: 'Parcel',
   office: 'Office',
+}
+
+function str(a: Record<string, unknown>, k: string): string | null {
+  return typeof a[k] === 'string' && (a[k] as string).length ? (a[k] as string) : null
+}
+
+/** Card props for an `entity` row: subtitle and badges derived from the kind-specific attributes. */
+export function entityRowToCard(r: EntityRow): EntityCardProps {
+  const a = r.attributes ?? {}
+  const subtitle = r.kind === 'person'
+    ? [str(a, 'office_held'), str(a, 'party'), str(a, 'district')].filter(Boolean).join(' · ')
+    : r.kind === 'org'
+      ? [str(a, 'org_type')?.replace(/_/g, ' '), str(a, 'sector')?.replace(/_/g, ' ')].filter(Boolean).join(' · ')
+      : [str(a, 'measure_number'), str(a, 'session')].filter(Boolean).join(' · ')
+  const badges = r.kind === 'person'
+    ? (Array.isArray(a.entity_types) ? (a.entity_types as string[]) : [])
+    : r.kind === 'org' ? [str(a, 'org_type')].filter((x): x is string => !!x) : [r.kind]
+  return { id: r.id, kind: r.kind, name: r.name, slug: str(a, 'slug'), subtitle: subtitle || null, badges, island: str(a, 'island'), status: str(a, 'status') }
 }
 
 /** Public URL for an entity, or null when the kind has no page yet. */

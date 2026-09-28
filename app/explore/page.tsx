@@ -1,11 +1,12 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getServiceDb } from '@/lib/db/service'
-import { listEntities } from '@/lib/db/queries'
+import { listEntities, countEntities } from '@/lib/db/queries'
 import type { EntityRow } from '@/lib/db/types'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
 import { attr } from '@/components/profile/edges'
+import { EXPLORE_CATEGORIES, categoriesInGroup, categoryListOptions, exploreHref } from '@/lib/explore/categories'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,29 +14,6 @@ export const metadata: Metadata = {
   title: 'Explore',
   description: 'Browse Hawaiʻi’s power structure by office, sector, island, and featured profiles.',
 }
-
-const BROWSE_BY_OFFICE = [
-  { label: 'Elected officials', href: '/search?type=person&entityType=elected_official' },
-  { label: 'Appointed officials', href: '/search?type=person&entityType=appointed_official' },
-  { label: 'County mayors', href: '/search?q=mayor&type=person' },
-  { label: 'PUC commissioners', href: '/search?q=PUC&type=person' },
-]
-
-const BROWSE_BY_SECTOR = [
-  { label: 'Energy', value: 'energy' },
-  { label: 'Real estate', value: 'real_estate' },
-  { label: 'Healthcare', value: 'healthcare' },
-  { label: 'Tourism', value: 'tourism' },
-  { label: 'Construction', value: 'construction' },
-  { label: 'Finance', value: 'finance' },
-]
-
-const BROWSE_BY_ISLAND = [
-  { label: 'Oʻahu', value: 'Oahu' },
-  { label: 'Maui', value: 'Maui' },
-  { label: 'Hawaiʻi Island', value: 'Hawaii' },
-  { label: 'Kauaʻi', value: 'Kauai' },
-]
 
 function EntityTile({ e }: { e: EntityRow }) {
   const slug = attr(e, 'slug')
@@ -51,11 +29,17 @@ function EntityTile({ e }: { e: EntityRow }) {
 
 export default async function ExplorePage() {
   const db = await getServiceDb()
-  const [featuredPeople, featuredOrgs, recentPeople] = await Promise.all([
+  const [featuredPeople, featuredOrgs, recentPeople, counts] = await Promise.all([
     listEntities(db, { kind: 'person', featured: true, status: 'active', limit: 8, orderBy: 'name' }),
     listEntities(db, { kind: 'org', featured: true, status: 'active', limit: 8, orderBy: 'name' }),
     listEntities(db, { kind: 'person', limit: 5, orderBy: 'created_at' }),
+    Promise.all(EXPLORE_CATEGORIES.map(async c => [c.slug, await countEntities(db, categoryListOptions(c))] as const)),
   ])
+  const countFor = new Map<string, number>(counts)
+  const Count = ({ slug }: { slug: string }) => {
+    const n = countFor.get(slug) ?? 0
+    return <span className="text-sm text-muted tabular ml-2">{n.toLocaleString('en-US')}</span>
+  }
 
   return (
     <>
@@ -66,9 +50,10 @@ export default async function ExplorePage() {
         <section className="mb-12">
           <h2 className="text-xs font-bold uppercase tracking-wide mb-3 pb-1 border-b border-ink">By office</h2>
           <ul className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {BROWSE_BY_OFFICE.map(item => (
-              <li key={item.label} className="card border border-rule p-4 hover:border-ink transition-colors">
-                <Link href={item.href} className="font-bold">{item.label}</Link>
+            {categoriesInGroup('office').map(item => (
+              <li key={item.slug} className="card border border-rule p-4 hover:border-ink transition-colors">
+                <Link href={exploreHref(item.slug)} className="font-bold">{item.label}</Link>
+                <Count slug={item.slug} />
               </li>
             ))}
           </ul>
@@ -77,9 +62,9 @@ export default async function ExplorePage() {
         <section className="mb-12">
           <h2 className="text-xs font-bold uppercase tracking-wide mb-3 pb-1 border-b border-ink">By sector</h2>
           <ul className="flex flex-wrap gap-2">
-            {BROWSE_BY_SECTOR.map(item => (
-              <li key={item.value}>
-                <Link href={`/search?type=organization&sector=${item.value}`} className="link-quiet inline-block border border-ink px-4 py-2 text-sm">{item.label}</Link>
+            {categoriesInGroup('sector').map(item => (
+              <li key={item.slug}>
+                <Link href={exploreHref(item.slug)} className="link-quiet inline-block border border-ink px-4 py-2 text-sm">{item.label}<span className="text-muted tabular ml-2">{(countFor.get(item.slug) ?? 0).toLocaleString('en-US')}</span></Link>
               </li>
             ))}
           </ul>
@@ -88,9 +73,10 @@ export default async function ExplorePage() {
         <section className="mb-12">
           <h2 className="text-xs font-bold uppercase tracking-wide mb-3 pb-1 border-b border-ink">By island</h2>
           <ul className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {BROWSE_BY_ISLAND.map(island => (
-              <li key={island.value} className="card border border-rule p-4 hover:border-ink transition-colors">
-                <Link href={`/search?island=${island.value}`} className="font-bold">{island.label}</Link>
+            {categoriesInGroup('island').map(island => (
+              <li key={island.slug} className="card border border-rule p-4 hover:border-ink transition-colors">
+                <Link href={exploreHref(island.slug)} className="font-bold">{island.label}</Link>
+                <Count slug={island.slug} />
               </li>
             ))}
           </ul>

@@ -2,13 +2,13 @@ import { Suspense } from 'react'
 import type { Metadata } from 'next'
 import { getServiceDb } from '@/lib/db/service'
 import { searchEntities, listEntities } from '@/lib/db/queries'
-import type { EntityKind, EntityRow } from '@/lib/db/types'
+import type { EntityKind } from '@/lib/db/types'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
 import { SearchBar } from '@/components/search/SearchBar'
 import { SearchFilters } from '@/components/search/SearchFilters'
 import { SearchResults } from '@/components/search/SearchResults'
-import type { EntityCardProps } from '@/components/search/EntityCard'
+import { entityRowToCard, type EntityCardProps } from '@/components/search/EntityCard'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,23 +23,6 @@ function kindFromType(type: string | undefined): EntityKind | undefined {
   if (type === 'person' || type === 'bill' || type === 'docket' || type === 'parcel' || type === 'office') return type
   if (type === 'organization' || type === 'org') return 'org'
   return undefined
-}
-
-function str(a: Record<string, unknown>, k: string): string | null {
-  return typeof a[k] === 'string' ? (a[k] as string) : null
-}
-
-function rowToCard(r: EntityRow): EntityCardProps {
-  const a = r.attributes ?? {}
-  const subtitle = r.kind === 'person'
-    ? [str(a, 'office_held'), str(a, 'party'), str(a, 'district')].filter(Boolean).join(' · ')
-    : r.kind === 'org'
-      ? [str(a, 'org_type')?.replace(/_/g, ' '), str(a, 'sector')?.replace(/_/g, ' ')].filter(Boolean).join(' · ')
-      : [str(a, 'measure_number'), str(a, 'session')].filter(Boolean).join(' · ')
-  const badges = r.kind === 'person'
-    ? (Array.isArray(a.entity_types) ? (a.entity_types as string[]) : [])
-    : r.kind === 'org' ? [str(a, 'org_type')].filter((x): x is string => !!x) : [r.kind]
-  return { id: r.id, kind: r.kind, name: r.name, slug: str(a, 'slug'), subtitle: subtitle || null, badges, island: str(a, 'island'), status: str(a, 'status') }
 }
 
 async function getResults(p: Params): Promise<{ results: EntityCardProps[]; total: number }> {
@@ -62,14 +45,18 @@ async function getResults(p: Params): Promise<{ results: EntityCardProps[]; tota
 
   if (!hasFilters) return { results: [], total: 0 }
 
-  // Browse mode (no query): list by kind and filter on attributes in memory.
+  // Browse mode (no query): filter on attributes in SQL.
   const kinds: EntityKind[] = kind ? [kind] : ['person', 'org']
-  const lists = await Promise.all(kinds.map(k => listEntities(db, { kind: k, status: p.status || undefined, limit: 200, orderBy: 'name' })))
-  let rows = lists.flatMap(l => l.rows)
-  if (p.island) rows = rows.filter(r => str(r.attributes, 'island') === p.island)
-  if (p.sector) rows = rows.filter(r => str(r.attributes, 'sector') === p.sector)
-  if (p.entityType) rows = rows.filter(r => Array.isArray(r.attributes.entity_types) && (r.attributes.entity_types as string[]).includes(p.entityType!))
-  return { results: rows.slice(0, 40).map(rowToCard), total: rows.length }
+  const { rows, total } = await listEntities(db, {
+    kind: kinds,
+    status: p.status || undefined,
+    island: p.island ? [p.island] : undefined,
+    sector: p.sector || undefined,
+    entityTypes: p.entityType ? [p.entityType] : undefined,
+    limit: 40,
+    orderBy: 'name',
+  })
+  return { results: rows.map(entityRowToCard), total }
 }
 
 export default async function SearchPage({ searchParams }: { searchParams: Promise<Params> }) {
