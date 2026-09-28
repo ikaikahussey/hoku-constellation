@@ -1,0 +1,5 @@
+[
+  {"organization": {"ein": 990073524, "name": "HAWAII COMMUNITY FOUNDATION", "city": "HONOLULU", "state": "HI", "ntee_code": "T31"},
+   "filings_with_data": [{"tax_prd_yr": 2023, "totrevenue": 150000000, "officer_nm_1": "MICAH KANE", "officer_ttl_1": "PRESIDENT & CEO", "officer_cmpnsatn_1": 450000, "officer_nm_2": "PETER HO", "officer_ttl_2": "DIRECTOR", "officer_cmpnsatn_2": 0, "officer_nm_3": "", "officers": [{"name": "Robin Campaniano", "title": "Board Chair", "compensation": 0}]}]},
+  {"organization": {"ein": "99-0001234", "name": "SMALL HUI", "city": "HILO", "state": "HI"}, "filings_with_data": [], "filings_without_data": [{"tax_prd_yr": 2022}]}
+]

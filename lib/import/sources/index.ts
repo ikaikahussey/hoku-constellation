@@ -14,6 +14,7 @@ export const IMPORTERS: Record<string, () => Promise<SourceModule>> = {
   puc: () => import('./puc'),
   fec: () => import('./fec'),
   usaspending: () => import('./usaspending'),
+  propublica_990: () => import('./propublica-990'),
   employee_compensation: () => import('./employee-compensation'),
 }
 
