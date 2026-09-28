@@ -234,21 +234,36 @@ export interface Resolution {
  * Full resolution pipeline: identifier → fuzzy → thresholds. Never creates entities; callers
  * decide whether to create based on `via`/`status` and the presence of an identifier.
  */
+/** Kinds whose identity is an identifier, not a name: "SB1234" and "SB1235" are one edit apart but distinct. */
+const IDENTIFIER_KINDS: Record<string, string> = { bill: 'measure', docket: 'docket_number', parcel: 'tmk' }
+
 export async function resolveEntity(db: Db, input: ResolveInput): Promise<Resolution> {
-  if (input.identifiers) {
-    const hit = await matchByIdentifiers(db, input.identifiers, input.kind)
+  const ids = Object.fromEntries(Object.entries(input.identifiers ?? {}).filter(([, v]) => v != null && String(v).trim() !== '')) as Record<string, string>
+  if (Object.keys(ids).length) {
+    const hit = await matchByIdentifiers(db, ids, input.kind)
     if (hit) return { entityId: hit.entityId, status: 'matched', confidence: 1, via: 'identifier' }
+    // Identifier supplied but unknown: for identifier-keyed kinds this is a new entity, never a fuzzy hit.
+    if (IDENTIFIER_KINDS[input.kind]) return { entityId: null, status: 'unmatched', confidence: null, via: 'none' }
   }
   if (!input.rawName?.trim()) return { entityId: null, status: 'unmatched', confidence: null, via: 'none' }
   const candidates = await fuzzyMatch(db, input.rawName, { kind: input.kind })
-  // Merged entities stay matchable by their old names; resolve to the survivor.
-  const best = candidates[0]
-  if (!best) return { entityId: null, status: 'unmatched', confidence: null, via: 'none' }
-  const status = autoMatchThreshold(best.confidence)
-  if (status === 'matched') {
-    return { entityId: await followMerge(db, best.id), status, confidence: best.confidence, via: 'fuzzy', candidate: best }
+  for (const best of candidates) {
+    // A candidate carrying a *different* value for a supplied identifier scheme is a different entity.
+    if (Object.keys(ids).length) {
+      const row = await db.one<{ identifiers: Record<string, string> }>(`select identifiers from entity where id = $1`, [best.id])
+      const conflict = Object.entries(ids).some(([k, v]) => row?.identifiers?.[k] != null && row.identifiers[k] !== v)
+      if (conflict) continue
+    }
+    let status = autoMatchThreshold(best.confidence)
+    // Identifier-keyed kinds matched by name alone need an exact normalized match.
+    if (IDENTIFIER_KINDS[input.kind] && best.confidence < 1) status = 'review'
+    if (status === 'matched') {
+      // Merged entities stay matchable by their old names; resolve to the survivor.
+      return { entityId: await followMerge(db, best.id), status, confidence: best.confidence, via: 'fuzzy', candidate: best }
+    }
+    return { entityId: null, status, confidence: best.confidence, via: 'fuzzy', candidate: best }
   }
-  return { entityId: null, status, confidence: best.confidence, via: 'fuzzy', candidate: best }
+  return { entityId: null, status: 'unmatched', confidence: null, via: 'none' }
 }
 
 // ---------------------------------------------------------------- legacy compatibility shims

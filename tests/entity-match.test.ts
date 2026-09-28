@@ -111,3 +111,27 @@ describe('database-backed resolution', () => {
     expect(r.entityId).toBe(heco)
   })
 })
+
+describe('identifier-keyed kinds', () => {
+  it('does not fuzzy-merge dockets or bills that differ by one character', async () => {
+    const { createTestDb } = await import('./helpers/pglite')
+    const { resolveEntity } = await import('@/lib/entity-match')
+    const db = await createTestDb()
+    try {
+      await db.query(`insert into entity (kind, name, identifiers, aliases) values ('docket', 'PUC Docket 2024-0001', '{"docket_number":"2024-0001"}', '{}')`)
+      const other = await resolveEntity(db, { kind: 'docket', rawName: 'PUC Docket 2024-0002', identifiers: { docket_number: '2024-0002' } })
+      expect(other.entityId).toBeNull()
+      expect(other.status).toBe('unmatched')
+      const same = await resolveEntity(db, { kind: 'docket', rawName: 'PUC Docket 2024-0001', identifiers: { docket_number: '2024-0001' } })
+      expect(same.via).toBe('identifier')
+      const byName = await resolveEntity(db, { kind: 'docket', rawName: 'PUC Docket 2024-0002' })
+      expect(byName.status).toBe('review') // near-miss by name only → review, never auto-matched
+      // Orgs: a fuzzy candidate carrying a different value for the same scheme is skipped.
+      await db.query(`insert into entity (kind, name, identifiers, aliases) values ('org', 'Aloha Fund PAC', '{"fec_id":"C001"}', '{}')`)
+      const conflict = await resolveEntity(db, { kind: 'org', rawName: 'Aloha Fund PAC', identifiers: { fec_id: 'C002' } })
+      expect(conflict.entityId).toBeNull()
+      const noIds = await resolveEntity(db, { kind: 'org', rawName: 'Aloha Fund PAC' })
+      expect(noIds.status).toBe('matched')
+    } finally { await db.end() }
+  })
+})
