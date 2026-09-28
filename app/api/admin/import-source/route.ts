@@ -1,170 +1,55 @@
+/**
+ * POST /api/admin/import-source  { source, offset?, batchSize?, dry?, params? }
+ * Runs one batch (≤ maxDuration) of a live importer under the staff session. The admin UI loops on
+ * `nextOffset` until `done`. Writes go through the service connection; the cursor advances per batch.
+ *
+ * GET /api/admin/import-source?source=<key>  → cursor + document/edge counts for the source.
+ */
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/admin'
-import { importCSCBatch } from '@/lib/import/sources/csc'
-import { importFECFull } from '@/lib/import/sources/fec'
-import { importLobbyistFull } from '@/lib/import/sources/lobbyist'
-import { importPUCFull } from '@/lib/import/sources/puc'
+import { authenticateStaff } from '@/app/api/analytics/_lib/auth'
+import { getSource, SOURCE_REGISTRY } from '@/lib/import/source-registry'
+import { loadImporter } from '@/lib/import/sources'
+import { runImporter } from '@/lib/import/run'
+import { getCursor } from '@/lib/import/pipeline'
+import { countDocumentsBySource } from '@/lib/db/queries'
 
 export const maxDuration = 55
+export const dynamic = 'force-dynamic'
 
-const CKAN_BASE = 'https://opendata.hawaii.gov/api/3/action'
-const FEC_BASE = 'https://api.open.fec.gov/v1'
-const FEC_API_KEY = process.env.FEC_API_KEY || 'DEMO_KEY'
-const LOBBYIST_RESOURCE_ID = 'aed69d13-fe07-4e91-8abf-a51c8a408e1f'
-
-const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-// ---- Preview: check source counts vs DB counts ----
-
-const CSC_RESOURCE_ID = '443bd998-1ef3-47da-9170-c2c376b2e41c'
-
-async function previewCSC() {
-  // Fetch source count from CKAN
-  const ckanRes = await fetch(`${CKAN_BASE}/datastore_search?resource_id=${CSC_RESOURCE_ID}&limit=0`)
-  const ckanData = await ckanRes.json()
-  const sourceTotal = ckanData?.result?.total ?? 0
-
-  // Then fetch DB count (sequential — parallel causes Supabase 500)
-  const supabase = createAdminClient()
-  const { count } = await supabase.from('contribution').select('id', { count: 'estimated', head: true }).eq('source', 'hawaii_csc')
-  const dbCount = count ?? 0
-
-  return { source_total: sourceTotal, db_count: dbCount, delta: sourceTotal - dbCount }
-}
-
-async function previewFEC() {
-  const supabase = createAdminClient()
-  const { count: dbCount } = await supabase.from('contribution').select('id', { count: 'estimated', head: true }).eq('source', 'fec')
-
-  let sourceTotal = 0
-  const committees = [
-    { name: 'Schatz', id: 'S4HI00089' },
-    { name: 'Hirono', id: 'S2HI00106' },
-    { name: 'Case', id: 'H6HI02164' },
-  ]
-  for (const c of committees) {
-    try {
-      const url = `${FEC_BASE}/candidate/${c.id}/totals/?api_key=${FEC_API_KEY}`
-      const res = await fetch(url)
-      if (res.ok) {
-        const data = await res.json()
-        const totals = data.results?.[0]
-        if (totals?.individual_itemized_contributions) {
-          sourceTotal += Math.ceil(totals.individual_itemized_contributions / 100)
-        }
-      }
-      await delay(500)
-    } catch {
-      // FEC rate limit
-    }
-  }
-
-  return { source_total: sourceTotal || 'unknown (API rate limited)', db_count: dbCount ?? 0, delta: typeof sourceTotal === 'number' ? sourceTotal - (dbCount ?? 0) : 'unknown' }
-}
-
-async function previewLobbyist() {
-  const countRes = await fetch(`${CKAN_BASE}/datastore_search?resource_id=${LOBBYIST_RESOURCE_ID}&limit=0`)
-  const countData = await countRes.json()
-  const sourceTotal = countData?.result?.total ?? 0
-
-  const supabase = createAdminClient()
-  const { count } = await supabase.from('lobbyist_registration').select('id', { count: 'estimated', head: true })
-  return { source_total: sourceTotal, db_count: count ?? 0, delta: sourceTotal - (count ?? 0) }
-}
-
-async function previewPUC() {
-  const supabase = createAdminClient()
-  const { count } = await supabase.from('puc_docket').select('id', { count: 'estimated', head: true })
-  return { source_total: 6, db_count: count ?? 0, delta: 6 - (count ?? 0), note: 'No public API — using curated docket list' }
-}
-
-// ---- GET: Check import status / counts + optional preview ----
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
-  const preview = searchParams.get('preview')
-
-  if (preview) {
-    try {
-      let result
-      switch (preview) {
-        case 'hawaii_csc': result = await previewCSC(); break
-        case 'fec': result = await previewFEC(); break
-        case 'lobbyist': result = await previewLobbyist(); break
-        case 'puc': result = await previewPUC(); break
-        default: return NextResponse.json({ error: `Unknown source: ${preview}` }, { status: 400 })
-      }
-      return NextResponse.json({ source: preview, ...result })
-    } catch (e) {
-      return NextResponse.json({ error: `Preview failed: ${e instanceof Error ? e.message : 'Unknown error'}` }, { status: 500 })
-    }
+  const { error, db } = await authenticateStaff()
+  if (error) return error
+  const source = request.nextUrl.searchParams.get('source')
+  if (!source) {
+    return NextResponse.json({ sources: SOURCE_REGISTRY.map(s => ({ key: s.key, name: s.name, status: s.status, tier: s.tier, cadence: s.cadence })) })
   }
-
-  const supabase = createAdminClient()
-  const [cscCount, fecCount, lobbyist, dockets, personCount] = await Promise.all([
-    supabase.from('contribution').select('id', { count: 'estimated', head: true }).eq('source', 'hawaii_csc'),
-    supabase.from('contribution').select('id', { count: 'estimated', head: true }).eq('source', 'fec'),
-    supabase.from('lobbyist_registration').select('id', { count: 'estimated', head: true }),
-    supabase.from('puc_docket').select('id', { count: 'estimated', head: true }),
-    supabase.from('person').select('id', { count: 'estimated', head: true }),
-  ])
-
-  const bySource: Record<string, number> = {}
-  if (cscCount.count) bySource['hawaii_csc'] = cscCount.count
-  if (fecCount.count) bySource['fec'] = fecCount.count
-  const total = (cscCount.count ?? 0) + (fecCount.count ?? 0)
-
-  return NextResponse.json({
-    contributions: { total, by_source: bySource },
-    lobbyist_registrations: lobbyist.count ?? 0,
-    puc_dockets: dockets.count ?? 0,
-    persons: personCount.count ?? 0,
-  })
+  const def = getSource(source)
+  const cursor = await getCursor(db, source)
+  const counts = (await countDocumentsBySource(db)).filter(c => c.source === source)
+  return NextResponse.json({ source: def, cursor, counts })
 }
 
-// ---- POST: Trigger an import ----
-// CSC uses batched imports (offset/limit) to stay within serverless timeout.
-// The UI calls repeatedly until done=true.
 export async function POST(request: NextRequest) {
-  const body = await request.json()
-  const { source, offset } = body as { source: string; offset?: number }
-
-  if (!source) {
-    return NextResponse.json({ error: 'source is required' }, { status: 400 })
-  }
-
+  const { error, db } = await authenticateStaff()
+  if (error) return error
+  let body: { source?: string; offset?: number; batchSize?: number; dry?: boolean; params?: Record<string, string> }
+  try { body = await request.json() } catch { return NextResponse.json({ error: 'JSON body required' }, { status: 400 }) }
+  if (!body.source) return NextResponse.json({ error: 'source is required' }, { status: 400 })
+  let def
+  try { def = getSource(body.source) } catch { return NextResponse.json({ error: `Unknown source ${body.source}` }, { status: 404 }) }
+  if (def.status === 'blocked' || def.status === 'retired') return NextResponse.json({ error: `Source ${def.key} is ${def.status}: ${def.notes ?? ''}` }, { status: 409 })
+  if (def.status === 'manual') return NextResponse.json({ error: `Source ${def.key} is manual — upload its file via /api/import` }, { status: 409 })
+  let mod
+  try { mod = await loadImporter(def.key) } catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 501 }) }
+  const logs: string[] = []
   try {
-    let result
-    switch (source) {
-      case 'hawaii_csc': {
-        const batchResult = await importCSCBatch(offset ?? 0, 1000)
-        return NextResponse.json({
-          success: true,
-          source,
-          inserted: batchResult.inserted,
-          personsCreated: batchResult.personsCreated,
-          nextOffset: batchResult.nextOffset,
-          done: batchResult.done,
-        })
-      }
-      case 'fec':
-        result = await importFECFull()
-        break
-      case 'lobbyist':
-        result = await importLobbyistFull()
-        break
-      case 'puc':
-        result = await importPUCFull()
-        break
-      default:
-        return NextResponse.json({ error: `Unknown source: ${source}` }, { status: 400 })
-    }
-
-    return NextResponse.json({ success: true, source, done: true, ...result })
+    const summary = await runImporter(db, def.key, mod.importBatch, {
+      batchSize: Math.min(Math.max(body.batchSize ?? 200, 1), 1000), maxBatches: 1, dry: !!body.dry,
+      params: body.params, offset: typeof body.offset === 'number' ? body.offset : undefined, resume: body.offset == null,
+      log: (m) => { if (logs.length < 50) logs.push(m) },
+    })
+    return NextResponse.json({ ...summary, logs })
   } catch (e) {
-    console.error(`Import error for ${source}:`, e)
-    return NextResponse.json(
-      { error: `Import failed: ${e instanceof Error ? e.message : 'Unknown error'}` },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: (e as Error).message, logs }, { status: 500 })
   }
 }

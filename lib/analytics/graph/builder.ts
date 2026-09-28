@@ -1,131 +1,125 @@
 /**
- * Graph builder — derives ax_relationship_edge from canonical tables.
- * Truncate-and-rebuild for idempotency. Separate from canonical `relationship`.
+ * Graph builder — derives ax_relationship_edge (person ↔ person analytical edges) from canonical edges.
+ * Truncate-and-rebuild for idempotency. Never conflated with canonical `edge` rows.
  */
-import type { SupabaseClient } from '@supabase/supabase-js'
-import type { EdgeType } from '../types'
+import type { Db } from '@/lib/db/types'
+import type { DerivedEdgeType } from '../types'
 
 interface DerivedEdge {
-  source_person_id: string
-  target_person_id: string
-  relationship_type: EdgeType
+  source_entity_id: string
+  target_entity_id: string
+  relationship_type: DerivedEdgeType
   weight: number
   evidence: Record<string, unknown>
 }
 
-function edgeKey(a: string, b: string, type: EdgeType) {
-  return a < b ? `${a}|${b}|${type}` : `${b}|${a}|${type}`
-}
-
-export async function rebuildRelationshipEdges(
-  supabase: SupabaseClient
-): Promise<{ edges: number }> {
+export async function deriveEdges(db: Db): Promise<DerivedEdge[]> {
   const acc = new Map<string, DerivedEdge>()
-
-  function add(a: string, b: string, type: EdgeType, weight = 1, ev: Record<string, unknown> = {}) {
+  function add(a: string, b: string, type: DerivedEdgeType, weight = 1, ev: Record<string, unknown> = {}) {
     if (!a || !b || a === b) return
     const [s, t] = a < b ? [a, b] : [b, a]
-    const key = edgeKey(s, t, type)
+    const key = `${s}|${t}|${type}`
     const existing = acc.get(key)
-    if (existing) {
-      existing.weight += weight
-    } else {
-      acc.set(key, { source_person_id: s, target_person_id: t, relationship_type: type, weight, evidence: ev })
-    }
+    if (existing) existing.weight += weight
+    else acc.set(key, { source_entity_id: s, target_entity_id: t, relationship_type: type, weight, evidence: ev })
   }
 
+  const persons = new Set((await db.many<{ id: string }>(`select id from entity where kind = 'person' and merged_into_id is null`)).map(p => p.id))
+  const isPerson = (id: string | null): id is string => !!id && persons.has(id)
+
   // ---- co_donor & donor_candidate ----
-  const { data: contribs } = await supabase
-    .from('contribution')
-    .select('donor_person_id, recipient_person_id, election_period, amount')
-    .neq('match_status', 'unmatched')
-    .not('donor_person_id', 'is', null)
-    .limit(100000)
+  const contribs = await db.many<{ from_id: string | null; to_id: string | null; election_period: string | null }>(
+    `select from_id, to_id, attributes ->> 'election_period' election_period from edge
+      where type = 'contributed_to' and match_status <> 'unmatched' and from_id is not null and to_id is not null limit 500000`)
   const byRecipientPeriod = new Map<string, Set<string>>()
-  for (const c of contribs ?? []) {
-    if (c.donor_person_id && c.recipient_person_id) {
-      add(c.donor_person_id, c.recipient_person_id, 'donor_candidate', 1, { period: c.election_period })
-      const key = `${c.recipient_person_id}|${c.election_period ?? ''}`
+  for (const c of contribs) {
+    if (isPerson(c.from_id) && isPerson(c.to_id)) add(c.from_id, c.to_id, 'donor_candidate', 1, { period: c.election_period })
+    if (isPerson(c.from_id) && c.to_id) {
+      const key = `${c.to_id}|${c.election_period ?? ''}`
       if (!byRecipientPeriod.has(key)) byRecipientPeriod.set(key, new Set())
-      byRecipientPeriod.get(key)!.add(c.donor_person_id)
+      byRecipientPeriod.get(key)!.add(c.from_id)
     }
   }
   for (const donors of byRecipientPeriod.values()) {
     const list = [...donors]
-    for (let i = 0; i < list.length; i++) {
-      for (let j = i + 1; j < list.length; j++) {
-        add(list[i], list[j], 'co_donor', 0.5)
-      }
-    }
+    if (list.length > 200) continue // cap dense hubs (large committees) to keep the graph tractable
+    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) add(list[i], list[j], 'co_donor', 0.5)
   }
 
   // ---- co_board_member / shared_organization ----
-  const { data: rels } = await supabase
-    .from('relationship')
-    .select('source_person_id, target_org_id, relationship_type, is_current')
-    .not('source_person_id', 'is', null)
-    .not('target_org_id', 'is', null)
+  const rels = await db.many<{ from_id: string | null; to_id: string | null; type: string }>(
+    `select from_id, to_id, type from edge where type in ('employed_by','officer_of','director_of','member_of','appointed_to') and from_id is not null and to_id is not null`)
   const byOrg = new Map<string, Set<string>>()
-  for (const r of rels ?? []) {
-    if (!byOrg.has(r.target_org_id!)) byOrg.set(r.target_org_id!, new Set())
-    byOrg.get(r.target_org_id!)!.add(r.source_person_id!)
+  const boardByOrg = new Map<string, Set<string>>()
+  for (const r of rels) {
+    if (!isPerson(r.from_id) || !r.to_id) continue
+    if (!byOrg.has(r.to_id)) byOrg.set(r.to_id, new Set())
+    byOrg.get(r.to_id)!.add(r.from_id)
+    if (r.type === 'director_of' || r.type === 'appointed_to') {
+      if (!boardByOrg.has(r.to_id)) boardByOrg.set(r.to_id, new Set())
+      boardByOrg.get(r.to_id)!.add(r.from_id)
+    }
   }
   for (const [, members] of byOrg) {
     const list = [...members]
-    for (let i = 0; i < list.length; i++) {
-      for (let j = i + 1; j < list.length; j++) {
-        add(list[i], list[j], 'shared_organization', 1)
-      }
-    }
+    if (list.length > 200) continue
+    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) add(list[i], list[j], 'shared_organization', 1)
+  }
+  for (const [, members] of boardByOrg) {
+    const list = [...members]
+    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) add(list[i], list[j], 'co_board_member', 1)
   }
 
   // ---- co_testimony & opposing_testimony ----
-  const { data: testimonies } = await supabase
-    .from('legislative_testimony')
-    .select('person_id, bill_number, position')
-    .not('person_id', 'is', null)
+  const testimonies = await db.many<{ from_id: string | null; to_id: string | null; role: string | null }>(
+    `select from_id, to_id, role from edge where type = 'testified_on' and from_id is not null and to_id is not null`)
   const byBill = new Map<string, Array<{ person: string; position: string }>>()
-  for (const t of testimonies ?? []) {
-    if (!byBill.has(t.bill_number)) byBill.set(t.bill_number, [])
-    byBill.get(t.bill_number)!.push({ person: t.person_id!, position: t.position })
+  for (const t of testimonies) {
+    if (!isPerson(t.from_id) || !t.to_id) continue
+    if (!byBill.has(t.to_id)) byBill.set(t.to_id, [])
+    byBill.get(t.to_id)!.push({ person: t.from_id, position: (t.role ?? '').toLowerCase() })
   }
   for (const entries of byBill.values()) {
-    for (let i = 0; i < entries.length; i++) {
-      for (let j = i + 1; j < entries.length; j++) {
-        const a = entries[i], b = entries[j]
-        if (a.position === b.position) add(a.person, b.person, 'co_testimony', 1)
-        else add(a.person, b.person, 'opposing_testimony', 0.5)
-      }
+    if (entries.length > 200) continue
+    for (let i = 0; i < entries.length; i++) for (let j = i + 1; j < entries.length; j++) {
+      const a = entries[i], b = entries[j]
+      if (a.position === b.position) add(a.person, b.person, 'co_testimony', 1)
+      else add(a.person, b.person, 'opposing_testimony', 0.5)
     }
   }
 
   // ---- lobbyist_client_officer ----
-  const { data: lobbyRegs } = await supabase
-    .from('lobbyist_registration')
-    .select('lobbyist_person_id, client_org_id')
-    .not('lobbyist_person_id', 'is', null)
-    .not('client_org_id', 'is', null)
-  for (const lr of lobbyRegs ?? []) {
-    const officers = byOrg.get(lr.client_org_id!) ?? new Set()
-    for (const o of officers) {
-      add(lr.lobbyist_person_id!, o, 'lobbyist_client_officer', 1)
+  const lobbyRegs = await db.many<{ from_id: string | null; to_id: string | null }>(
+    `select from_id, to_id from edge where type = 'lobbied_for' and from_id is not null and to_id is not null`)
+  for (const lr of lobbyRegs) {
+    if (!isPerson(lr.from_id) || !lr.to_id) continue
+    for (const o of byOrg.get(lr.to_id) ?? []) add(lr.from_id, o, 'lobbyist_client_officer', 1)
+  }
+
+  // ---- contractor_agency: officers of vendor orgs ↔ officers of awarding agencies ----
+  const contracts = await db.many<{ from_id: string | null; to_id: string | null }>(
+    `select from_id, to_id from edge where type in ('awarded_contract','awarded_grant') and from_id is not null and to_id is not null`)
+  for (const c of contracts) {
+    const agencyPeople = byOrg.get(c.from_id!) ?? new Set()
+    const vendorPeople = byOrg.get(c.to_id!) ?? new Set()
+    for (const a of agencyPeople) for (const v of vendorPeople) add(a, v, 'contractor_agency', 1)
+  }
+
+  return [...acc.values()]
+}
+
+export async function rebuildRelationshipEdges(db: Db): Promise<{ edges: number }> {
+  const rows = await deriveEdges(db)
+  await db.transaction(async tx => {
+    await tx.query('delete from ax_relationship_edge')
+    for (let i = 0; i < rows.length; i += 1000) {
+      const batch = rows.slice(i, i + 1000)
+      await tx.query(
+        `insert into ax_relationship_edge(source_entity_id, target_entity_id, relationship_type, weight, evidence)
+         select * from unnest($1::uuid[], $2::uuid[], $3::text[], $4::numeric[], $5::jsonb[])`,
+        [batch.map(e => e.source_entity_id), batch.map(e => e.target_entity_id), batch.map(e => e.relationship_type),
+          batch.map(e => Math.round(e.weight * 1000) / 1000), batch.map(e => JSON.stringify(e.evidence))])
     }
-  }
-
-  // Write: truncate then insert in batches
-  await supabase.from('ax_relationship_edge').delete().neq('source_person_id', '00000000-0000-0000-0000-000000000000')
-  const rows = [...acc.values()].map(e => ({
-    source_person_id: e.source_person_id,
-    target_person_id: e.target_person_id,
-    relationship_type: e.relationship_type,
-    weight: Math.round(e.weight * 1000) / 1000,
-    evidence: e.evidence,
-  }))
-  for (let i = 0; i < rows.length; i += 500) {
-    const batch = rows.slice(i, i + 500)
-    const { error } = await supabase.from('ax_relationship_edge').insert(batch)
-    if (error) console.error(`edge insert batch ${i}: ${error.message}`)
-  }
-
+  })
   return { edges: rows.length }
 }

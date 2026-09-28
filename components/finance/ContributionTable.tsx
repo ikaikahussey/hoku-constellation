@@ -1,81 +1,85 @@
+import Link from 'next/link'
+import type { EdgeWithEnds } from '@/lib/db/queries/edges'
+import { formatShortDate, formatCurrencyDetailed } from '@/lib/format'
+import { otherEnd } from '@/components/profile/edges'
+
 interface ContributionTableProps {
-  contributions: Record<string, unknown>[]
+  /** `contributed_to` edges touching `entityId`. */
+  edges: EdgeWithEnds[]
   entityId: string
-  entityType: 'person' | 'organization'
+  /** received = entity is the recipient (to_id); given = entity is the donor (from_id). */
+  direction: 'received' | 'given'
+  /** Render greyed placeholder rows (behind a PaywallGate) instead of data. */
+  placeholder?: boolean
+  caption?: string
 }
 
-export function ContributionTable({ contributions, entityId, entityType }: ContributionTableProps) {
-  if (contributions.length === 0) {
-    return <p className="text-white/30 text-sm py-4">No campaign finance records linked yet.</p>
+function contributionType(edge: EdgeWithEnds): string {
+  const t = edge.attributes?.contribution_type
+  if (typeof t === 'string' && t) return t.replace(/_/g, ' ')
+  if (edge.attributes?.non_monetary === true) return 'non-monetary'
+  return edge.role?.replace(/_/g, ' ') ?? 'monetary'
+}
+
+export function ContributionTable({ edges, entityId, direction, placeholder = false, caption }: ContributionTableProps) {
+  const otherLabel = direction === 'received' ? 'Donor' : 'Recipient'
+
+  if (!placeholder && edges.length === 0) {
+    return <p className="text-sm text-muted py-4">No contributions {direction} on record.</p>
   }
 
-  // Calculate totals
-  const totalReceived = contributions
-    .filter((c) => c.recipient_person_id === entityId || c.recipient_org_id === entityId)
-    .reduce((sum, c) => sum + Number(c.amount), 0)
-
-  const totalGiven = contributions
-    .filter((c) => c.donor_person_id === entityId || c.donor_org_id === entityId)
-    .reduce((sum, c) => sum + Number(c.amount), 0)
+  const rows = placeholder ? Array.from({ length: 5 }, (_, i) => i) : edges
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {totalReceived > 0 && (
-          <div className="bg-navy-light rounded-lg border border-white/10 p-4">
-            <p className="text-sm text-white/50">Total Received</p>
-            <p className="text-2xl font-bold text-gold">${totalReceived.toLocaleString()}</p>
-          </div>
-        )}
-        {totalGiven > 0 && (
-          <div className="bg-navy-light rounded-lg border border-white/10 p-4">
-            <p className="text-sm text-white/50">Total Given</p>
-            <p className="text-2xl font-bold text-gold">${totalGiven.toLocaleString()}</p>
-          </div>
-        )}
-      </div>
-
-      <div className="bg-navy-light rounded-lg border border-white/10 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-white/10">
-              <th className="text-left py-3 px-4 text-white/50 font-medium">Date</th>
-              <th className="text-left py-3 px-4 text-white/50 font-medium">
-                {entityType === 'person' ? 'Donor / Recipient' : 'Entity'}
-              </th>
-              <th className="text-left py-3 px-4 text-white/50 font-medium">Type</th>
-              <th className="text-right py-3 px-4 text-white/50 font-medium">Amount</th>
-              <th className="text-left py-3 px-4 text-white/50 font-medium">Source</th>
-            </tr>
-          </thead>
-          <tbody>
-            {contributions.map((c) => {
-              const isRecipient = c.recipient_person_id === entityId || c.recipient_org_id === entityId
-              return (
-                <tr key={c.id as string} className="border-b border-white/5 hover:bg-white/5">
-                  <td className="py-3 px-4 text-white/60 text-xs">
-                    {c.contribution_date ? new Date(c.contribution_date as string).toLocaleDateString() : '—'}
-                  </td>
-                  <td className="py-3 px-4 text-white">
-                    {isRecipient ? (c.donor_name_raw as string) : (c.recipient_name_raw as string)}
-                    {isRecipient && <span className="text-xs text-white/30 ml-1">(donor)</span>}
-                    {!isRecipient && <span className="text-xs text-white/30 ml-1">(recipient)</span>}
-                  </td>
-                  <td className="py-3 px-4 text-white/40 text-xs">{(c.contribution_type as string || '').replace(/_/g, ' ')}</td>
-                  <td className="py-3 px-4 text-right font-medium text-white">
-                    ${Number(c.amount).toLocaleString()}
-                  </td>
-                  <td className="py-3 px-4 text-white/30 text-xs">{(c.source as string || '').replace(/_/g, ' ')}</td>
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm tabular">
+        {caption && <caption className="sr-only">{caption}</caption>}
+        <thead>
+          <tr className="border-b border-ink">
+            <th scope="col" className="py-2 pr-3 text-left text-xs font-bold uppercase tracking-wide">Date</th>
+            <th scope="col" className="py-2 px-3 text-left text-xs font-bold uppercase tracking-wide">{otherLabel}</th>
+            <th scope="col" className="py-2 px-3 text-left text-xs font-bold uppercase tracking-wide">Type</th>
+            <th scope="col" className="py-2 px-3 text-right text-xs font-bold uppercase tracking-wide">Amount</th>
+            <th scope="col" className="py-2 pl-3 text-left text-xs font-bold uppercase tracking-wide">Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {placeholder
+            ? (rows as number[]).map(i => (
+                <tr key={i} className="border-b border-rule text-muted">
+                  <td className="py-2 pr-3">Jan 1, 2024</td>
+                  <td className="py-2 px-3">Subscriber-only donor record</td>
+                  <td className="py-2 px-3">monetary</td>
+                  <td className="py-2 px-3 text-right">$0.00</td>
+                  <td className="py-2 pl-3">campaign spending commission</td>
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <p className="text-xs text-white/20">
-        Source: Campaign finance records from state and county agencies. All amounts are as reported in original filings.
-      </p>
+              ))
+            : (rows as EdgeWithEnds[]).map(edge => {
+                const other = otherEnd(edge, entityId)
+                const period = typeof edge.attributes?.election_period === 'string' ? edge.attributes.election_period : null
+                return (
+                  <tr key={edge.id} className="border-b border-rule">
+                    <td className="py-2 pr-3 whitespace-nowrap">{edge.start_date ? formatShortDate(edge.start_date) : '—'}</td>
+                    <td className="py-2 px-3">
+                      {other.href ? <Link href={other.href}>{other.name}</Link> : other.name}
+                      {edge.match_status !== 'matched' && other.href && <span className="ml-1 text-xs text-muted">(review)</span>}
+                    </td>
+                    <td className="py-2 px-3 text-muted">
+                      {contributionType(edge)}{period ? ` · ${period}` : ''}
+                    </td>
+                    <td className="py-2 px-3 text-right font-bold whitespace-nowrap">
+                      {edge.amount != null ? formatCurrencyDetailed(Number(edge.amount)) : '—'}
+                    </td>
+                    <td className="py-2 pl-3 text-muted">
+                      {edge.doc_url ? (
+                        <a href={edge.doc_url} target="_blank" rel="noopener noreferrer">{edge.doc_source.replace(/_/g, ' ')}</a>
+                      ) : edge.doc_source.replace(/_/g, ' ')}
+                    </td>
+                  </tr>
+                )
+              })}
+        </tbody>
+      </table>
     </div>
   )
 }

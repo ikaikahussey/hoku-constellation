@@ -1,5 +1,5 @@
 #!/bin/bash
-echo "=== Hoku Constellation Workers ==="
+echo "=== HOKU Insider Workers ==="
 echo ""
 launchctl list | grep -E "hoku\.constellation" || echo "No workers found"
 echo ""

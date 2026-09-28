@@ -26,7 +26,7 @@ export const SUBSCRIPTION_TIERS = {
     features: [
       'Full access to all profiles',
       'Complete campaign finance detail',
-      'Relationship constellation maps',
+      'Relationship network maps',
       'Ethics disclosures and PUC records',
       'All linked reporting',
       'Timeline view',

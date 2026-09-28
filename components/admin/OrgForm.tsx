@@ -1,9 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createEntity, updateEntity } from '@/app/admin/actions'
 import { slugify } from '@/lib/slugify'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
+import { Textarea } from '@/components/ui/Textarea'
+import type { EntityRow } from '@/lib/db/types'
 
 const ORG_TYPES = [
   'government_agency', 'nonprofit', 'corporation', 'pac', 'lobbying_firm',
@@ -11,210 +16,111 @@ const ORG_TYPES = [
   'media_outlet', 'religious_org', 'cultural_org', 'land_trust', 'developer',
   'utility', 'other',
 ]
-
-const SECTORS = [
-  'energy', 'real_estate', 'healthcare', 'tourism', 'agriculture',
-  'construction', 'finance', 'tech', 'military', 'education', 'other',
-]
-
+const SECTORS = ['energy', 'real_estate', 'healthcare', 'tourism', 'agriculture', 'construction', 'finance', 'tech', 'military', 'education', 'other']
 const ISLANDS = ['Oahu', 'Maui', 'Hawaii', 'Kauai', 'Molokai', 'Lanai', 'Niihau', 'Statewide']
 const STATUSES = ['active', 'dissolved', 'merged', 'acquired']
 
-interface OrgFormProps {
-  org?: Record<string, unknown>
-}
+const opts = (xs: string[]) => xs.map(x => ({ value: x, label: x.replace(/_/g, ' ') }))
+function s(v: unknown): string { return typeof v === 'string' ? v : '' }
 
-export function OrgForm({ org }: OrgFormProps) {
+export function OrgForm({ org }: { org?: EntityRow }) {
   const router = useRouter()
-  const [saving, setSaving] = useState(false)
+  const a = org?.attributes ?? {}
+  const ids = org?.identifiers ?? {}
+  const [pending, start] = useTransition()
   const [error, setError] = useState('')
-
-  const [formData, setFormData] = useState({
-    name: (org?.name as string) || '',
-    slug: (org?.slug as string) || '',
-    aliases: ((org?.aliases as string[]) || []).join(', '),
-    org_type: (org?.org_type as string) || '',
-    description: (org?.description as string) || '',
-    website_url: (org?.website_url as string) || '',
-    island: (org?.island as string) || '',
-    sector: (org?.sector as string) || '',
-    status: (org?.status as string) || 'active',
-    is_featured: (org?.is_featured as boolean) || false,
-    visibility: (org?.visibility as string) || 'gated',
+  const [form, setForm] = useState({
+    name: org?.name ?? '',
+    slug: s(a.slug),
+    aliases: (org?.aliases ?? []).join(', '),
+    org_type: s(a.org_type),
+    sector: s(a.sector),
+    island: s(a.island),
+    description: s(a.description),
+    website_url: s(a.website_url),
+    status: s(a.status) || 'active',
+    is_featured: a.is_featured === true,
+    visibility: s(a.visibility) || 'gated',
+    ein: s(ids.ein),
+    dcca: s(ids.dcca),
+    sec_cik: s(ids.sec_cik),
+    fec_id: s(ids.fec_id),
   })
 
-  function updateField(field: string, value: unknown) {
-    setFormData((prev) => ({ ...prev, [field]: value }))
-    if (field === 'name' && !org) {
-      setFormData((prev) => ({ ...prev, slug: slugify(value as string) }))
-    }
+  function set<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
+    setForm(prev => {
+      const next = { ...prev, [k]: v }
+      if (k === 'name' && !org) next.slug = slugify(String(v))
+      return next
+    })
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setSaving(true)
     setError('')
-
-    const supabase = createClient()
-    const payload = {
-      ...formData,
-      aliases: formData.aliases.split(',').map((a) => a.trim()).filter(Boolean),
+    const fd = new FormData()
+    for (const [k, v] of Object.entries(form)) {
+      if (k === 'is_featured') { if (v) fd.set('is_featured', 'on'); continue }
+      fd.set(k, String(v))
     }
-
-    if (org) {
-      const { error: err } = await supabase
-        .from('organization')
-        .update({ ...payload, updated_at: new Date().toISOString() })
-        .eq('id', org.id)
-      if (err) { setError(err.message); setSaving(false); return }
-    } else {
-      const { error: err } = await supabase.from('organization').insert(payload)
-      if (err) { setError(err.message); setSaving(false); return }
-    }
-
-    router.push('/admin/org')
-    router.refresh()
+    start(async () => {
+      const res = org ? await updateEntity(org.id, fd) : await createEntity('org', fd)
+      if (!res.ok) { setError(res.error); return }
+      router.push(`/admin/entity/${res.id}`)
+      router.refresh()
+    })
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-3xl space-y-6">
-      {error && (
-        <div className="bg-error/10 border border-error/30 rounded-md p-3 text-sm text-red-300">{error}</div>
-      )}
+    <form onSubmit={submit} className="max-w-3xl space-y-6">
+      {error && <p className="border border-ink p-3 text-sm" role="alert">⚠ {error}</p>}
 
-      <div className="bg-navy-light rounded-lg border border-white/10 p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-white">Basic Information</h2>
+      <section className="card bg-paper border border-rule p-6 space-y-4">
+        <h2 className="text-lg font-bold">Basic information</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-white/70 mb-1">Name *</label>
-            <input
-              required
-              value={formData.name}
-              onChange={(e) => updateField('name', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">URL Slug</label>
-            <input
-              value={formData.slug}
-              onChange={(e) => updateField('slug', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white/60 font-mono text-sm focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Aliases (comma-separated)</label>
-            <input
-              value={formData.aliases}
-              onChange={(e) => updateField('aliases', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Organization Type *</label>
-            <select
-              required
-              value={formData.org_type}
-              onChange={(e) => updateField('org_type', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            >
-              <option value="">Select...</option>
-              {ORG_TYPES.map((t) => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Sector</label>
-            <select
-              value={formData.sector}
-              onChange={(e) => updateField('sector', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            >
-              <option value="">Select...</option>
-              {SECTORS.map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Island</label>
-            <select
-              value={formData.island}
-              onChange={(e) => updateField('island', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            >
-              <option value="">Select...</option>
-              {ISLANDS.map((i) => <option key={i} value={i}>{i}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Website</label>
-            <input
-              value={formData.website_url}
-              onChange={(e) => updateField('website_url', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
+          <div className="md:col-span-2"><Input label="Name *" required value={form.name} onChange={e => set('name', e.target.value)} /></div>
+          <Input label="URL slug" value={form.slug} onChange={e => set('slug', e.target.value)} className="font-mono text-sm" />
+          <Input label="Aliases (comma-separated)" value={form.aliases} onChange={e => set('aliases', e.target.value)} />
+          <Select label="Organization type *" required value={form.org_type} onChange={e => set('org_type', e.target.value)} options={opts(ORG_TYPES)} placeholder="Select…" />
+          <Select label="Sector" value={form.sector} onChange={e => set('sector', e.target.value)} options={opts(SECTORS)} placeholder="Select…" />
+          <Select label="Island" value={form.island} onChange={e => set('island', e.target.value)} options={opts(ISLANDS)} placeholder="Select…" />
+          <Input label="Website" value={form.website_url} onChange={e => set('website_url', e.target.value)} />
         </div>
-      </div>
+      </section>
 
-      <div className="bg-navy-light rounded-lg border border-white/10 p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-white">Description</h2>
-        <textarea
-          value={formData.description}
-          onChange={(e) => updateField('description', e.target.value)}
-          rows={6}
-          className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white font-mono text-sm focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-          placeholder="Markdown description..."
-        />
-      </div>
+      <section className="card bg-paper border border-rule p-6 space-y-4">
+        <h2 className="text-lg font-bold">Identifiers</h2>
+        <p className="text-sm text-muted">Structured ids let ingestion match records exactly before falling back to fuzzy name matching.</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Input label="EIN" value={form.ein} onChange={e => set('ein', e.target.value)} placeholder="99-0123456" className="font-mono text-sm" />
+          <Input label="DCCA file number" value={form.dcca} onChange={e => set('dcca', e.target.value)} className="font-mono text-sm" />
+          <Input label="SEC CIK" value={form.sec_cik} onChange={e => set('sec_cik', e.target.value)} className="font-mono text-sm" />
+          <Input label="FEC committee id" value={form.fec_id} onChange={e => set('fec_id', e.target.value)} className="font-mono text-sm" />
+        </div>
+      </section>
 
-      <div className="bg-navy-light rounded-lg border border-white/10 p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-white">Settings</h2>
+      <section className="card bg-paper border border-rule p-6 space-y-4">
+        <h2 className="text-lg font-bold">Description</h2>
+        <Textarea label="Description (Markdown)" rows={6} value={form.description} onChange={e => set('description', e.target.value)} className="font-mono text-sm" placeholder="Markdown description…" />
+      </section>
+
+      <section className="card bg-paper border border-rule p-6 space-y-4">
+        <h2 className="text-lg font-bold">Settings</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Status</label>
-            <select
-              value={formData.status}
-              onChange={(e) => updateField('status', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            >
-              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Visibility</label>
-            <select
-              value={formData.visibility}
-              onChange={(e) => updateField('visibility', e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            >
-              <option value="public">public</option>
-              <option value="gated">gated</option>
-            </select>
-          </div>
+          <Select label="Status" value={form.status} onChange={e => set('status', e.target.value)} options={opts(STATUSES)} />
+          <Select label="Visibility" value={form.visibility} onChange={e => set('visibility', e.target.value)} options={opts(['public', 'gated'])} />
           <div className="flex items-end">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.is_featured}
-                onChange={(e) => updateField('is_featured', e.target.checked)}
-                className="rounded border-white/20 bg-navy text-gold focus:ring-gold"
-              />
-              <span className="text-sm text-white/70">Featured</span>
+            <label className="flex items-center gap-2 cursor-pointer text-sm">
+              <input type="checkbox" checked={form.is_featured} onChange={e => set('is_featured', e.target.checked)} className="h-4 w-4 border border-ink accent-ink" />
+              Featured
             </label>
           </div>
         </div>
-      </div>
+      </section>
 
       <div className="flex items-center gap-4">
-        <button
-          type="submit"
-          disabled={saving}
-          className="bg-gold text-navy px-6 py-2.5 rounded-md font-semibold text-sm hover:bg-gold-light transition-colors disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : org ? 'Update Organization' : 'Create Organization'}
-        </button>
-        <button type="button" onClick={() => router.back()} className="text-sm text-white/50 hover:text-white">
-          Cancel
-        </button>
+        <Button type="submit" loading={pending}>{org ? 'Update organization' : 'Create organization'}</Button>
+        <Button type="button" variant="ghost" onClick={() => router.back()}>Cancel</Button>
       </div>
     </form>
   )

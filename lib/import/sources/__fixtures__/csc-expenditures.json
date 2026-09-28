@@ -1,0 +1,4 @@
+[
+  {"_id": 11, "Candidate Name": "Green, Josh", "Vendor Name": "Anthology Marketing Group", "Expenditure Category": "Advertising", "Amount": "15,000.00", "Date": "2022-07-10", "Election Period": "2018-2022", "Reg No": "CC10529", "Purpose of Expenditure": "TV ads"},
+  {"_id": 12, "Noncandidate Committee Name": "Be Change Now", "Vendor Name": "Hawaii Printing LLC", "Expenditure Category": "Printing", "Amount": "800", "Date": "2022-08-01", "Election Period": "2022-2024", "Reg No": "NC20456"}
+]

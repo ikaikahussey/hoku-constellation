@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { authenticateApiRequest } from '../../_lib/auth'
+import { getEntity } from '@/lib/db/queries'
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { error } = await authenticateApiRequest()
+  const { error, db } = await authenticateApiRequest()
   if (error) return error
-
   const { id } = await params
-  const supabase = await createClient()
-  const { data, error: dbError } = await supabase.from('organization').select('*').eq('id', id).single()
-
-  if (dbError || !data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json(data)
+  const entity = await getEntity(db, id)
+  if (!entity || entity.kind !== 'org') return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  return NextResponse.json({ ...entity, ...entity.attributes })
 }

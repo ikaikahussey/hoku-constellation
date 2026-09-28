@@ -1,121 +1,94 @@
 'use client'
 
-import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { Suspense, useState } from 'react'
 import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { getAuthClient } from '@/lib/db/browser'
+import { AuthShell, FormError } from '@/components/auth/AuthShell'
+import { Input } from '@/components/ui/Input'
+import { Button } from '@/components/ui/Button'
 
-export default function SignupPage() {
+function SignupForm() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const plan = searchParams.get('plan')
+  const next = plan ? `/pricing?plan=${encodeURIComponent(plan)}` : '/search'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [fullName, setFullName] = useState('')
+  const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [success, setSuccess] = useState(false)
+  const [pendingVerification, setPendingVerification] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError('')
-
-    const supabase = createClient()
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName },
-      },
-    })
-
+    const { data, error } = await safe(() => getAuthClient().signUp.email({ email, password, name }))
     if (error) {
-      setError(error.message)
+      setError(error.message ?? 'Could not create your account.')
       setLoading(false)
       return
     }
-
-    setSuccess(true)
+    const token = (data as { token?: string | null } | null)?.token
+    if (token) {
+      router.push(next)
+      router.refresh()
+      return
+    }
+    setPendingVerification(true)
     setLoading(false)
   }
 
-  if (success) {
+  async function handleGoogle() {
+    setError('')
+    const callbackURL = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
+    const { error } = await safe(() => getAuthClient().signIn.social({ provider: 'google', callbackURL }))
+    if (error) setError(error.message ?? 'Google sign-in failed.')
+  }
+
+  if (pendingVerification) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="w-full max-w-sm text-center">
-          <div className="w-16 h-16 rounded-full bg-success/20 flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-bold text-white mb-2">Check your email</h1>
-          <p className="text-white/50">We sent a confirmation link to <strong className="text-white">{email}</strong>.</p>
-          <Link href="/auth/login" className="inline-block mt-6 text-gold hover:text-gold-light text-sm">
-            Back to login
-          </Link>
-        </div>
+      <div className="text-center">
+        <p className="text-muted">We sent a confirmation link to <strong className="text-ink" data-ph-mask>{email}</strong>. Open it to finish creating your account.</p>
+        <p className="mt-6 text-sm"><Link href="/auth/login">Back to log in</Link></p>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 mb-6">
-            <span className="text-lg font-bold text-white">HOKU</span>
-            <span className="text-lg font-light text-white/80 tracking-wider">CONSTELLATION</span>
-          </Link>
-          <h1 className="text-2xl font-bold text-white">Create your account</h1>
+    <>
+      {plan && <p className="mb-4 text-sm text-muted text-center">You&apos;re signing up for the <span className="font-bold capitalize text-ink">{plan}</span> plan. Your 14-day free trial starts after checkout.</p>}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <FormError message={error} />
+        <Input label="Full name" type="text" autoComplete="name" required value={name} onChange={e => setName(e.target.value)} />
+        <Input label="Email" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} />
+        <div>
+          <Input label="Password" type="password" autoComplete="new-password" required minLength={8} value={password} onChange={e => setPassword(e.target.value)} />
+          <p className="text-xs text-muted mt-1">Minimum 8 characters</p>
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="bg-error/10 border border-error/30 rounded-md p-3 text-sm text-red-300">{error}</div>
-          )}
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Full Name</label>
-            <input
-              type="text"
-              required
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy-light px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Email</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy-light px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1">Password</label>
-            <input
-              type="password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="block w-full rounded-md border border-white/20 bg-navy-light px-3 py-2 text-white focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
-            />
-            <p className="text-xs text-white/30 mt-1">Minimum 8 characters</p>
-          </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-gold text-navy py-2.5 rounded-md font-semibold hover:bg-gold-light transition-colors disabled:opacity-50"
-          >
-            {loading ? 'Creating account...' : 'Create account'}
-          </button>
-        </form>
-
-        <p className="mt-6 text-center text-sm text-white/40">
-          Already have an account?{' '}
-          <Link href="/auth/login" className="text-gold hover:text-gold-light">Log in</Link>
-        </p>
+        <Button type="submit" loading={loading} className="w-full">Create account</Button>
+      </form>
+      <div className="my-4 flex items-center gap-3 text-xs text-muted" aria-hidden="true">
+        <span className="flex-1 border-t border-rule" />or<span className="flex-1 border-t border-rule" />
       </div>
-    </div>
+      <Button type="button" variant="secondary" className="w-full" onClick={handleGoogle}>Continue with Google</Button>
+      <p className="mt-4 text-xs text-muted text-center">By creating an account you agree to the <Link href="/terms">Terms</Link> and <Link href="/privacy">Privacy Policy</Link>.</p>
+    </>
+  )
+}
+
+/** Client calls throw when NEXT_PUBLIC_NEON_AUTH_URL is missing or the network is down; surface that as a form error. */
+async function safe<T extends { data?: unknown; error?: { message?: string } | null }>(fn: () => Promise<T>): Promise<{ error: { message?: string } | null; data: T['data'] | null }> {
+  try { const r = await fn(); return { error: r.error ?? null, data: r.data ?? null } } catch (e) { return { error: { message: (e as Error).message || 'Something went wrong. Please try again.' }, data: null } }
+}
+
+export default function SignupPage() {
+  return (
+    <AuthShell title="Create your account" footer={<>Already have an account? <Link href="/auth/login">Log in</Link></>}>
+      <Suspense fallback={null}>
+        <SignupForm />
+      </Suspense>
+    </AuthShell>
   )
 }

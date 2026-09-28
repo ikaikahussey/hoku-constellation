@@ -1,6 +1,6 @@
 import { ButtonHTMLAttributes, forwardRef } from 'react'
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
+type Variant = 'primary' | 'secondary' | 'ghost'
 type Size = 'sm' | 'md' | 'lg'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -9,37 +9,29 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean
 }
 
-const variantStyles: Record<Variant, string> = {
-  primary: 'bg-gold text-navy hover:bg-gold-light font-semibold',
-  secondary: 'bg-navy-light text-white border border-white/20 hover:border-gold/50',
-  ghost: 'text-white/70 hover:text-white hover:bg-white/5',
-  danger: 'bg-error text-white hover:bg-error/80',
+/** Buttons: black fill / white text, or white fill with a 1px black border. Never red. */
+export const buttonStyles: Record<Variant, string> = {
+  primary: 'bg-ink text-paper border border-ink hover:bg-paper hover:text-ink',
+  secondary: 'bg-paper text-ink border border-ink hover:bg-ink hover:text-paper',
+  ghost: 'bg-paper text-ink border border-transparent hover:border-ink',
 }
 
-const sizeStyles: Record<Size, string> = {
+export const buttonSizes: Record<Size, string> = {
   sm: 'px-3 py-1.5 text-sm',
   md: 'px-4 py-2 text-sm',
   lg: 'px-6 py-3 text-base',
 }
 
+export function buttonClass(variant: Variant = 'primary', size: Size = 'md', extra = ''): string {
+  return `btn inline-flex items-center justify-center font-bold transition-colors disabled:opacity-50 disabled:pointer-events-none ${buttonStyles[variant]} ${buttonSizes[size]} ${extra}`
+}
+
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = 'primary', size = 'md', loading, className = '', disabled, children, ...props }, ref) => {
-    return (
-      <button
-        ref={ref}
-        disabled={disabled || loading}
-        className={`inline-flex items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/50 disabled:opacity-50 disabled:pointer-events-none ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
-        {...props}
-      >
-        {loading && (
-          <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-        )}
-        {children}
-      </button>
-    )
-  }
+  ({ variant = 'primary', size = 'md', loading, className = '', disabled, children, ...props }, ref) => (
+    <button ref={ref} disabled={disabled || loading} className={buttonClass(variant, size, className)} {...props}>
+      {loading && <span className="mr-2 inline-block h-3 w-3 animate-spin border-2 border-current border-t-transparent" aria-hidden="true" />}
+      {children}
+    </button>
+  )
 )
 Button.displayName = 'Button'

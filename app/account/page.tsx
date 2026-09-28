@@ -1,134 +1,61 @@
-'use client'
-
-import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import Link from 'next/link'
+import type { Metadata } from 'next'
+import { redirect } from 'next/navigation'
+import { getCurrentUser } from '@/lib/auth'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
-import Link from 'next/link'
+import { Badge } from '@/components/ui/Badge'
+import { buttonClass } from '@/components/ui/Button'
+import { SignOutButton } from '@/components/account/SignOutButton'
+import { formatDate } from '@/lib/format'
 
-interface Profile {
-  subscription_tier: string
-  subscription_status: string
-  email: string | null
-  full_name: string | null
-  trial_ends_at: string | null
-}
+export const dynamic = 'force-dynamic'
 
-export default function AccountPage() {
-  const [profile, setProfile] = useState<Profile | null>(null)
-  const [loading, setLoading] = useState(true)
+export const metadata: Metadata = { title: 'Account' }
 
-  useEffect(() => {
-    async function load() {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setLoading(false); return }
+export default async function AccountPage() {
+  const user = await getCurrentUser()
+  if (!user) redirect('/auth/login?next=/account')
 
-      const { data } = await supabase
-        .from('user_profile')
-        .select('subscription_tier, subscription_status, email, full_name, trial_ends_at')
-        .eq('id', user.id)
-        .single()
-
-      setProfile(data || {
-        subscription_tier: 'free',
-        subscription_status: 'inactive',
-        email: user.email || null,
-        full_name: null,
-        trial_ends_at: null,
-      })
-      setLoading(false)
-    }
-    load()
-  }, [])
-
-  async function handleSignOut() {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    window.location.href = '/'
-  }
-
-  if (loading) {
-    return (
-      <>
-        <Header />
-        <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-16">
-          <div className="animate-pulse space-y-4">
-            <div className="h-8 bg-white/10 rounded w-48" />
-            <div className="h-32 bg-white/10 rounded" />
-          </div>
-        </main>
-        <Footer />
-      </>
-    )
-  }
-
-  if (!profile) {
-    return (
-      <>
-        <Header />
-        <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-16 text-center">
-          <p className="text-white/50">Please log in to view your account.</p>
-          <Link href="/auth/login" className="text-gold mt-4 inline-block">Log in</Link>
-        </main>
-        <Footer />
-      </>
-    )
-  }
+  const { account } = user
+  const isFree = account.subscription_tier === 'free'
 
   return (
     <>
-      <Header />
+      <Header signedIn />
       <main className="flex-1 max-w-2xl mx-auto w-full px-4 sm:px-6 py-16">
-        <h1 className="text-2xl font-bold text-white mb-8">Account</h1>
+        <h1 className="text-3xl font-bold mb-8">Account</h1>
 
-        <div className="bg-navy-light rounded-lg border border-white/10 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-white mb-4">Profile</h2>
-          <div className="space-y-2 text-sm">
-            <p><span className="text-white/50">Email:</span> <span className="text-white">{profile.email}</span></p>
-            {profile.full_name && (
-              <p><span className="text-white/50">Name:</span> <span className="text-white">{profile.full_name}</span></p>
-            )}
-          </div>
-        </div>
+        <section className="border border-rule p-6 mb-6">
+          <h2 className="text-xs font-bold uppercase tracking-wide mb-4">Profile</h2>
+          <dl className="grid grid-cols-[8rem_1fr] gap-y-2 text-sm">
+            <dt className="text-muted">Email</dt>
+            <dd data-ph-mask>{user.email}</dd>
+            {user.name && (<><dt className="text-muted">Name</dt><dd data-ph-mask>{user.name}</dd></>)}
+            {user.isStaff && (<><dt className="text-muted">Role</dt><dd><Badge variant="solid">Staff</Badge> <Link href="/admin" className="ml-2">Admin</Link></dd></>)}
+          </dl>
+        </section>
 
-        <div className="bg-navy-light rounded-lg border border-white/10 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-white mb-4">Subscription</h2>
-          <div className="space-y-2 text-sm">
-            <p>
-              <span className="text-white/50">Plan:</span>{' '}
-              <span className="text-gold font-medium capitalize">{profile.subscription_tier}</span>
-            </p>
-            <p>
-              <span className="text-white/50">Status:</span>{' '}
-              <span className={`font-medium ${profile.subscription_status === 'active' ? 'text-green-400' : 'text-white/60'}`}>
-                {profile.subscription_status}
-              </span>
-            </p>
-            {profile.trial_ends_at && (
-              <p>
-                <span className="text-white/50">Trial ends:</span>{' '}
-                <span className="text-white">{new Date(profile.trial_ends_at).toLocaleDateString()}</span>
-              </p>
-            )}
-          </div>
-
-          {profile.subscription_tier === 'free' && (
-            <Link
-              href="/pricing"
-              className="inline-block mt-4 bg-gold text-navy px-4 py-2 rounded-md text-sm font-semibold hover:bg-gold-light transition-colors"
-            >
-              Upgrade
-            </Link>
+        <section className="border border-rule p-6 mb-6">
+          <h2 className="text-xs font-bold uppercase tracking-wide mb-4">Subscription</h2>
+          <dl className="grid grid-cols-[8rem_1fr] gap-y-2 text-sm">
+            <dt className="text-muted">Plan</dt>
+            <dd className="font-bold capitalize">{account.subscription_tier}</dd>
+            <dt className="text-muted">Status</dt>
+            <dd className="capitalize">{account.subscription_status}</dd>
+            {account.trial_ends_at && (<><dt className="text-muted">Trial ends</dt><dd>{formatDate(account.trial_ends_at)}</dd></>)}
+            <dt className="text-muted">Member since</dt>
+            <dd>{formatDate(account.created_at)}</dd>
+          </dl>
+          {isFree && (
+            <Link href="/pricing" className={`${buttonClass('primary', 'sm')} mt-5`}>Upgrade</Link>
           )}
-        </div>
+          {!isFree && (
+            <p className="mt-5 text-sm text-muted">To change or cancel your plan, email <a href="mailto:constellation@hoku.fm">constellation@hoku.fm</a>.</p>
+          )}
+        </section>
 
-        <button
-          onClick={handleSignOut}
-          className="text-sm text-white/40 hover:text-white transition-colors"
-        >
-          Sign out
-        </button>
+        <SignOutButton />
       </main>
       <Footer />
     </>

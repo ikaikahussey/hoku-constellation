@@ -1,19 +1,25 @@
-import { createAdminClient } from './lib/supabase'
+import { getWorkerDb, closeWorkerDb, workerArgs } from './lib/db'
 import { log, logError } from './lib/logger'
-import { recomputeAllScoresBatch } from '@/lib/analytics'
+import { recomputeAllScoresBatch, computeAllScores } from '@/lib/analytics'
 
 async function main() {
-  const supabase = createAdminClient()
-  log('Recompute scores starting')
+  const { dry } = workerArgs()
+  const db = getWorkerDb()
+  log(`Recompute scores starting (dry=${dry})`)
   try {
-    const count = await recomputeAllScoresBatch(supabase)
+    if (dry) {
+      const rows = await computeAllScores(db)
+      log(`Dry run: would score ${rows.length} persons`)
+      return
+    }
+    const count = await recomputeAllScoresBatch(db)
     log(`Recompute scores complete: count=${count}`)
   } catch (e) {
     logError('Recompute scores failed', e)
     throw e
+  } finally {
+    await closeWorkerDb()
   }
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch(() => process.exit(1))
+main().then(() => process.exit(0)).catch(() => process.exit(1))

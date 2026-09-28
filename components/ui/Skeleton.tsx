@@ -1,9 +1,3 @@
-interface SkeletonProps {
-  className?: string
-}
-
-export function Skeleton({ className = '' }: SkeletonProps) {
-  return (
-    <div className={`animate-pulse rounded bg-white/10 ${className}`} />
-  )
+export function Skeleton({ className = '' }: { className?: string }) {
+  return <div className={`animate-pulse bg-gray-100 ${className}`} aria-hidden="true" />
 }

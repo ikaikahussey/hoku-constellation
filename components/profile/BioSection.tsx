@@ -3,19 +3,13 @@ import remarkGfm from 'remark-gfm'
 
 interface BioSectionProps {
   content: string | null
+  emptyMessage?: string
 }
 
-export function BioSection({ content }: BioSectionProps) {
-  if (!content) {
-    return (
-      <div className="text-white/30 text-sm py-4">
-        No biographical summary available yet.
-      </div>
-    )
-  }
-
+export function BioSection({ content, emptyMessage = 'No summary available yet.' }: BioSectionProps) {
+  if (!content) return <p className="text-sm text-muted py-4">{emptyMessage}</p>
   return (
-    <div className="prose prose-invert prose-sm max-w-none prose-headings:text-white prose-p:text-white/70 prose-a:text-gold prose-strong:text-white">
+    <div className="prose max-w-none text-[17px] leading-relaxed">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
     </div>
   )

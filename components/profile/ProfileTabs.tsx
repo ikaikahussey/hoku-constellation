@@ -8,9 +8,10 @@ interface ProfileTabsProps {
   moneyContent: React.ReactNode
   reportingContent: React.ReactNode
   timelineContent: React.ReactNode
+  graphContent: React.ReactNode
 }
 
-export function ProfileTabs({ overviewContent, connectionsContent, moneyContent, reportingContent, timelineContent }: ProfileTabsProps) {
+export function ProfileTabs({ overviewContent, connectionsContent, moneyContent, reportingContent, timelineContent, graphContent }: ProfileTabsProps) {
   return (
     <Tabs defaultTab="overview">
       <TabList>
@@ -19,12 +20,14 @@ export function ProfileTabs({ overviewContent, connectionsContent, moneyContent,
         <Tab value="money">Money</Tab>
         <Tab value="reporting">Reporting</Tab>
         <Tab value="timeline">Timeline</Tab>
+        <Tab value="graph">Graph</Tab>
       </TabList>
       <TabPanel value="overview">{overviewContent}</TabPanel>
       <TabPanel value="connections">{connectionsContent}</TabPanel>
       <TabPanel value="money">{moneyContent}</TabPanel>
       <TabPanel value="reporting">{reportingContent}</TabPanel>
       <TabPanel value="timeline">{timelineContent}</TabPanel>
+      <TabPanel value="graph">{graphContent}</TabPanel>
     </Tabs>
   )
 }

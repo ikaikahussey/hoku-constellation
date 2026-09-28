@@ -1,24 +1,16 @@
 /**
- * Batch recompute of influence scores.
+ * Batch recompute of influence scores over the core schema.
  *
- * The naive per-person recompute issues ~10 SQL round-trips per person which
- * does not scale (9 min for ~850 scored persons, and will exceed Vercel's
- * 300s maxDuration as the person count grows).
- *
- * This variant prefetches every canonical table once, builds in-memory indexes
- * keyed by person_id, and computes all six dimensions in a single pass.
- * Persons with zero signal are skipped entirely. Upserts are chunked.
+ * Prefetches the edge table once per type family, builds in-memory indexes keyed by entity id, and
+ * computes all six dimensions in a single pass. Persons with zero signal are skipped. Upserts are chunked.
  */
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Db } from '@/lib/db/types'
 import { SCORE_WEIGHTS, SCORE_VERSION, TITLE_TIERS } from './score-config'
 import { buildAdjacency, degreeCentrality } from '../graph/centrality'
 
 const UPSERT_CHUNK = 500
-const RANK_CHUNK = 500
 
-function cap(x: number): number {
-  return Math.max(0, Math.min(100, x))
-}
+function cap(x: number): number { return Math.max(0, Math.min(100, x)) }
 
 function percentileRank(sorted: number[], value: number): number {
   if (sorted.length === 0) return 0
@@ -31,272 +23,170 @@ function percentileRank(sorted: number[], value: number): number {
   return (lo / sorted.length) * 100
 }
 
-interface DonationRow { id: string; donor_person_id: string; amount: number; recipient_person_id: string | null; election_period: string | null }
-interface RelationshipRow { id: string; source_person_id: string; title: string | null; is_current: boolean | null; relationship_type: string | null; target_org_id: string | null }
-interface ContractRow { id: string; vendor_org_id: string; contract_amount: number | null }
-interface TestimonyRow { id: string; person_id: string; bill_number: string | null; session: string | null; hearing_date: string | null }
+interface EdgeLite { from_id: string | null; to_id: string | null; type: string; role: string | null; amount: string | null; start_date: string | null; end_date: string | null; attributes: Record<string, unknown> }
 
-/**
- * Keyset-paginated full-table read. OFFSET-based pagination hits Supabase's
- * 60s statement timeout on large tables; `where id > lastId order by id limit N`
- * stays fast regardless of depth.
- *
- * `columns` MUST include `id` — we append it automatically if missing.
- */
-async function fetchAll<T extends { id: string }>(
-  supabase: SupabaseClient,
-  table: string,
-  columns: string
-): Promise<T[]> {
-  const PAGE = 1000
-  const cols = /\bid\b/.test(columns) ? columns : `id, ${columns}`
-  const out: T[] = []
+const POSITION_TYPES = ['employed_by', 'officer_of', 'director_of', 'member_of', 'appointed_to']
+
+async function fetchEdges(db: Db, types: string[]): Promise<EdgeLite[]> {
+  // Keyset pagination by id keeps each statement short on large tables.
+  const PAGE = 5000
+  const out: EdgeLite[] = []
   let lastId = '00000000-0000-0000-0000-000000000000'
   for (;;) {
-    const { data, error } = await supabase
-      .from(table)
-      .select(cols)
-      .gt('id', lastId)
-      .order('id', { ascending: true })
-      .limit(PAGE)
-    if (error) throw new Error(`fetchAll ${table}: ${error.message}`)
-    if (!data || data.length === 0) break
-    out.push(...(data as unknown as T[]))
-    if (data.length < PAGE) break
-    lastId = (data[data.length - 1] as unknown as { id: string }).id
+    const rows = await db.many<EdgeLite & { id: string }>(
+      `select id, from_id, to_id, type, role, amount::text, start_date::text, end_date::text, attributes
+         from edge where type = any($1) and id > $2 order by id limit $3`, [types, lastId, PAGE])
+    out.push(...rows)
+    if (rows.length < PAGE) break
+    lastId = rows[rows.length - 1].id
   }
   return out
 }
 
-export async function recomputeAllScoresBatch(supabase: SupabaseClient): Promise<number> {
-  // ── 1. Active person IDs ────────────────────────────────────────────────
-  const { data: people, error: peopleErr } = await supabase
-    .from('person')
-    .select('id, office_held')
-    .eq('status', 'active')
-  if (peopleErr) throw new Error(`person fetch: ${peopleErr.message}`)
+export interface ScoreRowInsert {
+  entity_id: string
+  composite_score: number
+  political_money_score: number
+  institutional_position_score: number
+  lobbying_score: number
+  economic_footprint_score: number
+  network_centrality_score: number
+  public_visibility_score: number
+  rank?: number
+  percentile?: number
+}
+
+/** Compute scores for every person entity with any signal (pure part; no writes). */
+export async function computeAllScores(db: Db): Promise<ScoreRowInsert[]> {
+  // ── 1. Persons ────────────────────────────────────────────────────────────
+  const people = await db.many<{ id: string; office_held: string | null; status: string | null }>(
+    `select id, attributes ->> 'office_held' office_held, attributes ->> 'status' status from entity where kind = 'person' and merged_into_id is null`)
   const personOffice = new Map<string, string | null>()
-  for (const p of people ?? []) personOffice.set(p.id, p.office_held ?? null)
+  const personIds = new Set<string>()
+  for (const p of people) { personOffice.set(p.id, p.office_held); personIds.add(p.id) }
 
-  // ── 2. Contributions ────────────────────────────────────────────────────
-  const donations = await fetchAll<DonationRow>(
-    supabase,
-    'contribution',
-    'donor_person_id, amount, recipient_person_id, election_period'
-  ).then(rows => rows.filter(r => r.donor_person_id))
+  // ── 2. Org types (PAC detection) ──────────────────────────────────────────
+  const orgs = await db.many<{ id: string; org_type: string | null }>(`select id, attributes ->> 'org_type' org_type from entity where kind = 'org'`)
+  const orgType = new Map(orgs.map(o => [o.id, o.org_type]))
 
-  const donationsByDonor = new Map<string, DonationRow[]>()
+  // ── 3. Contributions ──────────────────────────────────────────────────────
+  const donations = (await fetchEdges(db, ['contributed_to'])).filter(e => e.from_id)
+  const donationsByDonor = new Map<string, EdgeLite[]>()
   const totalsByDonor = new Map<string, number>()
   for (const d of donations) {
-    const id = d.donor_person_id
+    const id = d.from_id!
     if (!donationsByDonor.has(id)) donationsByDonor.set(id, [])
     donationsByDonor.get(id)!.push(d)
     totalsByDonor.set(id, (totalsByDonor.get(id) ?? 0) + Number(d.amount || 0))
   }
   const sortedDonationTotals = [...totalsByDonor.values()].sort((a, b) => a - b)
 
-  // ── 3. Organization org_type (for PAC detection) ────────────────────────
-  const orgs = await fetchAll<{ id: string; org_type: string | null }>(
-    supabase,
-    'organization',
-    'id, org_type'
-  )
-  const orgType = new Map<string, string | null>()
-  for (const o of orgs) orgType.set(o.id, o.org_type)
-
-  // ── 4. Relationships (source_person_id not null) ───────────────────────
-  const relationships = await fetchAll<RelationshipRow>(
-    supabase,
-    'relationship',
-    'source_person_id, title, is_current, relationship_type, target_org_id'
-  ).then(rows => rows.filter(r => r.source_person_id))
-
-  const relsByPerson = new Map<string, RelationshipRow[]>()
-  for (const r of relationships) {
-    if (!relsByPerson.has(r.source_person_id)) relsByPerson.set(r.source_person_id, [])
-    relsByPerson.get(r.source_person_id)!.push(r)
+  // ── 4. Positions ──────────────────────────────────────────────────────────
+  const positions = (await fetchEdges(db, POSITION_TYPES)).filter(e => e.from_id && personIds.has(e.from_id))
+  const relsByPerson = new Map<string, EdgeLite[]>()
+  for (const r of positions) {
+    if (!relsByPerson.has(r.from_id!)) relsByPerson.set(r.from_id!, [])
+    relsByPerson.get(r.from_id!)!.push(r)
   }
+  const isCurrent = (e: EdgeLite) => e.attributes?.is_current !== false && !e.end_date
 
-  // ── 5. Lobbying ─────────────────────────────────────────────────────────
-  const lobRegs = await fetchAll<{ id: string; lobbyist_person_id: string }>(
-    supabase,
-    'lobbyist_registration',
-    'lobbyist_person_id'
-  ).then(rows => rows.filter(r => r.lobbyist_person_id))
-  const registeredLobbyists = new Set(lobRegs.map(r => r.lobbyist_person_id))
-
-  const lobExps = await fetchAll<{ id: string; lobbyist_person_id: string; amount: number | null }>(
-    supabase,
-    'lobbyist_expenditure',
-    'lobbyist_person_id, amount'
-  ).then(rows => rows.filter(r => r.lobbyist_person_id))
+  // ── 5. Lobbying ───────────────────────────────────────────────────────────
+  const lobRegs = (await fetchEdges(db, ['lobbied_for'])).filter(e => e.from_id && personIds.has(e.from_id))
+  const registeredLobbyists = new Set(lobRegs.map(r => r.from_id!))
+  const lobExps = (await fetchEdges(db, ['spent_with'])).filter(e => e.from_id && personIds.has(e.from_id))
   const lobExpByPerson = new Map<string, number>()
-  for (const e of lobExps) {
-    lobExpByPerson.set(e.lobbyist_person_id, (lobExpByPerson.get(e.lobbyist_person_id) ?? 0) + Number(e.amount || 0))
-  }
+  for (const e of lobExps) lobExpByPerson.set(e.from_id!, (lobExpByPerson.get(e.from_id!) ?? 0) + Number(e.amount || 0))
 
-  // ── 6. Testimony ────────────────────────────────────────────────────────
-  const testimony = await fetchAll<TestimonyRow>(
-    supabase,
-    'legislative_testimony',
-    'person_id, bill_number, session, hearing_date'
-  ).then(rows => rows.filter(r => r.person_id))
-  const testimonyByPerson = new Map<string, TestimonyRow[]>()
+  // ── 6. Testimony ──────────────────────────────────────────────────────────
+  const testimony = (await fetchEdges(db, ['testified_on'])).filter(e => e.from_id && personIds.has(e.from_id))
+  const testimonyByPerson = new Map<string, EdgeLite[]>()
   for (const t of testimony) {
-    if (!testimonyByPerson.has(t.person_id)) testimonyByPerson.set(t.person_id, [])
-    testimonyByPerson.get(t.person_id)!.push(t)
+    if (!testimonyByPerson.has(t.from_id!)) testimonyByPerson.set(t.from_id!, [])
+    testimonyByPerson.get(t.from_id!)!.push(t)
   }
 
-  // ── 7. Property ─────────────────────────────────────────────────────────
-  const props = await fetchAll<{ id: string; owner_person_id: string; assessed_value: number | null }>(
-    supabase,
-    'property_ownership',
-    'owner_person_id, assessed_value'
-  ).then(rows => rows.filter(r => r.owner_person_id))
+  // ── 7. Property ───────────────────────────────────────────────────────────
+  const props = (await fetchEdges(db, ['owns'])).filter(e => e.from_id && personIds.has(e.from_id))
   const propSumByPerson = new Map<string, number>()
-  for (const p of props) {
-    propSumByPerson.set(p.owner_person_id, (propSumByPerson.get(p.owner_person_id) ?? 0) + Number(p.assessed_value || 0))
-  }
+  for (const p of props) propSumByPerson.set(p.from_id!, (propSumByPerson.get(p.from_id!) ?? 0) + Number((p.attributes?.assessed_value as number) || 0))
 
-  // ── 8. Government contracts by vendor org ──────────────────────────────
-  const contracts = await fetchAll<ContractRow>(
-    supabase,
-    'government_contract',
-    'vendor_org_id, contract_amount'
-  ).then(rows => rows.filter(r => r.vendor_org_id))
+  // ── 8. Contracts by vendor org ────────────────────────────────────────────
+  const contracts = (await fetchEdges(db, ['awarded_contract', 'awarded_grant'])).filter(e => e.to_id)
   const contractSumByOrg = new Map<string, number>()
-  for (const c of contracts) {
-    contractSumByOrg.set(c.vendor_org_id, (contractSumByOrg.get(c.vendor_org_id) ?? 0) + Number(c.contract_amount || 0))
-  }
+  for (const c of contracts) contractSumByOrg.set(c.to_id!, (contractSumByOrg.get(c.to_id!) ?? 0) + Number(c.amount || 0))
 
-  // ── 9. Article mentions ────────────────────────────────────────────────
-  const mentions = await fetchAll<{ id: string; person_id: string }>(
-    supabase,
-    'article_entity_mention',
-    'person_id'
-  ).then(rows => rows.filter(r => r.person_id))
+  // ── 9. Mentions ───────────────────────────────────────────────────────────
+  const mentions = (await fetchEdges(db, ['mentioned_in'])).filter(e => e.from_id && personIds.has(e.from_id) && e.role !== 'event')
   const mentionCountByPerson = new Map<string, number>()
-  for (const m of mentions) {
-    mentionCountByPerson.set(m.person_id, (mentionCountByPerson.get(m.person_id) ?? 0) + 1)
-  }
+  for (const m of mentions) mentionCountByPerson.set(m.from_id!, (mentionCountByPerson.get(m.from_id!) ?? 0) + 1)
 
-  // ── 10. Network centrality from ax_relationship_edge ───────────────────
-  const edges = await fetchAll<{ id: string; source_person_id: string; target_person_id: string }>(
-    supabase,
-    'ax_relationship_edge',
-    'source_person_id, target_person_id'
-  ).then(rows => rows.filter(r => r.source_person_id && r.target_person_id))
+  // ── 10. Network centrality from ax_relationship_edge ──────────────────────
+  const dEdges = await db.many<{ source_entity_id: string; target_entity_id: string }>(`select source_entity_id, target_entity_id from ax_relationship_edge`)
   const nodeSet = new Set<string>()
-  for (const e of edges) { nodeSet.add(e.source_person_id); nodeSet.add(e.target_person_id) }
-  const adj = buildAdjacency(
-    [...nodeSet],
-    edges.map(e => ({ source: e.source_person_id, target: e.target_person_id, type: 'derived', weight: 1, value: 1 }))
-  )
+  for (const e of dEdges) { nodeSet.add(e.source_entity_id); nodeSet.add(e.target_entity_id) }
+  const adj = buildAdjacency([...nodeSet], dEdges.map(e => ({ source: e.source_entity_id, target: e.target_entity_id, type: 'derived', value: 1 })))
   const degree = degreeCentrality(adj)
-  // Degree is [0,1]; scale to 0–100 for the dimension score.
   const centralityScore = new Map<string, number>()
   for (const [id, d] of degree) centralityScore.set(id, cap(d * 100))
+  // Preserve betweenness/eigen centrality already stored by rebuild-graph, if present.
+  const stored = await db.many<{ entity_id: string; network_centrality_score: string }>(`select entity_id, network_centrality_score::text from ax_influence_score`)
+  const storedCentrality = new Map(stored.map(s => [s.entity_id, Number(s.network_centrality_score)]))
 
-  // ── 11. Testimony within 2y window for public visibility ───────────────
-  const twoYearsAgo = new Date()
-  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2)
+  // ── 11. Recent testimony window ───────────────────────────────────────────
+  const twoYearsAgo = new Date(); twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2)
   const twoYearIso = twoYearsAgo.toISOString().slice(0, 10)
   const recentTestimonyByPerson = new Map<string, number>()
   for (const [pid, rows] of testimonyByPerson) {
-    const count = rows.filter(r => (r.hearing_date ?? '') >= twoYearIso).length
-    if (count > 0) recentTestimonyByPerson.set(pid, count)
+    const n = rows.filter(r => (r.start_date ?? '') >= twoYearIso).length
+    if (n > 0) recentTestimonyByPerson.set(pid, n)
   }
 
-  // ── 12. Per-person compute ─────────────────────────────────────────────
-  const allPersonIds = new Set<string>()
-  for (const id of personOffice.keys()) allPersonIds.add(id)
-  // Include any person with any signal, even if not "active"
-  for (const id of totalsByDonor.keys()) allPersonIds.add(id)
-  for (const id of relsByPerson.keys()) allPersonIds.add(id)
-  for (const id of registeredLobbyists) allPersonIds.add(id)
-  for (const id of testimonyByPerson.keys()) allPersonIds.add(id)
-  for (const id of propSumByPerson.keys()) allPersonIds.add(id)
-  for (const id of mentionCountByPerson.keys()) allPersonIds.add(id)
-  for (const id of centralityScore.keys()) allPersonIds.add(id)
-
-  const now = new Date().toISOString()
-  const rows: Array<{
-    person_id: string
-    composite_score: number
-    political_money_score: number
-    institutional_position_score: number
-    lobbying_score: number
-    economic_footprint_score: number
-    network_centrality_score: number
-    public_visibility_score: number
-    computed_at: string
-    score_version: number
-  }> = []
-
-  for (const pid of allPersonIds) {
-    // Skip anyone with no signal at all
+  // ── 12. Per-person compute ────────────────────────────────────────────────
+  const rows: ScoreRowInsert[] = []
+  for (const pid of personIds) {
     const hasAnySignal =
-      totalsByDonor.has(pid) ||
-      (relsByPerson.get(pid)?.length ?? 0) > 0 ||
-      registeredLobbyists.has(pid) ||
-      testimonyByPerson.has(pid) ||
-      propSumByPerson.has(pid) ||
-      mentionCountByPerson.has(pid) ||
-      (centralityScore.get(pid) ?? 0) > 0 ||
-      Boolean(personOffice.get(pid))
+      totalsByDonor.has(pid) || (relsByPerson.get(pid)?.length ?? 0) > 0 || registeredLobbyists.has(pid) ||
+      testimonyByPerson.has(pid) || propSumByPerson.has(pid) || mentionCountByPerson.has(pid) ||
+      (centralityScore.get(pid) ?? 0) > 0 || Boolean(personOffice.get(pid))
     if (!hasAnySignal) continue
 
     // political_money
-    let pm = 0
-    const given = totalsByDonor.get(pid) ?? 0
-    pm = percentileRank(sortedDonationTotals, given)
-    const myDonations = donationsByDonor.get(pid) ?? []
+    let pm = percentileRank(sortedDonationTotals, totalsByDonor.get(pid) ?? 0)
     const byPeriod = new Map<string, Set<string>>()
-    for (const d of myDonations) {
-      const period = d.election_period ?? 'na'
-      const rec = d.recipient_person_id ?? 'none'
+    for (const d of donationsByDonor.get(pid) ?? []) {
+      const period = (d.attributes?.election_period as string) ?? 'na'
       if (!byPeriod.has(period)) byPeriod.set(period, new Set())
-      byPeriod.get(period)!.add(rec)
+      byPeriod.get(period)!.add(d.to_id ?? 'none')
     }
     if ([...byPeriod.values()].some(s => s.size >= 5)) pm += 10
     const myRels = relsByPerson.get(pid) ?? []
-    const isPacOfficer = myRels.some(r =>
-      ['officer', 'treasurer'].includes(r.relationship_type ?? '') &&
-      r.target_org_id && orgType.get(r.target_org_id) === 'pac'
-    )
-    if (isPacOfficer) pm += 15
+    if (myRels.some(r => r.type === 'officer_of' && r.to_id && orgType.get(r.to_id) === 'pac')) pm += 15
     pm = cap(pm)
 
     // institutional_position
     let best = 0
-    const office = personOffice.get(pid)?.toLowerCase() ?? ''
-    for (const [tier, score] of Object.entries(TITLE_TIERS)) {
-      if (office.includes(tier)) best = Math.max(best, score)
-    }
+    const office = (personOffice.get(pid) ?? '').toLowerCase()
+    for (const [tier, score] of Object.entries(TITLE_TIERS)) if (office.includes(tier)) best = Math.max(best, score)
     for (const r of myRels) {
-      if (r.is_current === false) continue
-      const title = (r.title ?? '').toLowerCase()
-      for (const [tier, score] of Object.entries(TITLE_TIERS)) {
-        if (title.includes(tier)) best = Math.max(best, score)
-      }
+      if (!isCurrent(r)) continue
+      const title = (r.role ?? '').toLowerCase()
+      for (const [tier, score] of Object.entries(TITLE_TIERS)) if (title.includes(tier)) best = Math.max(best, score)
     }
-    const currentRoles = myRels.filter(r => r.is_current !== false).length
-    const extra = Math.min(20, Math.max(0, currentRoles - 1) * 5)
-    const ip = cap(best + extra)
+    const currentRoles = myRels.filter(isCurrent).length
+    const ip = cap(best + Math.min(20, Math.max(0, currentRoles - 1) * 5))
 
     // lobbying
     let lb = 0
     if (registeredLobbyists.has(pid)) {
-      const total = lobExpByPerson.get(pid) ?? 0
-      lb = cap(Math.log10(Math.max(1, total)) * 15)
+      lb = cap(Math.log10(Math.max(1, lobExpByPerson.get(pid) ?? 0)) * 15)
     } else {
-      const rows = testimonyByPerson.get(pid) ?? []
-      lb = cap((rows.length / 20) * 100)
+      const t = testimonyByPerson.get(pid) ?? []
+      lb = cap((t.length / 20) * 100)
       const perSession = new Map<string, Set<string>>()
-      for (const t of rows) {
-        const key = t.session ?? 'na'
+      for (const e of t) {
+        const key = (e.attributes?.session as string) ?? 'na'
         if (!perSession.has(key)) perSession.set(key, new Set())
-        if (t.bill_number) perSession.get(key)!.add(t.bill_number)
+        if (e.to_id) perSession.get(key)!.add(e.to_id)
       }
       if ([...perSession.values()].some(s => s.size >= 5)) lb += 10
     }
@@ -304,82 +194,61 @@ export async function recomputeAllScoresBatch(supabase: SupabaseClient): Promise
 
     // economic_footprint
     const propSum = propSumByPerson.get(pid) ?? 0
-    const orgIdsForPerson = myRels
-      .filter(r => ['officer', 'director', 'board_member'].includes(r.relationship_type ?? ''))
-      .map(r => r.target_org_id)
-      .filter((x): x is string => Boolean(x))
     let contractSum = 0
-    for (const oid of orgIdsForPerson) contractSum += contractSumByOrg.get(oid) ?? 0
+    for (const r of myRels) {
+      if (['officer_of', 'director_of'].includes(r.type) && r.to_id) contractSum += contractSumByOrg.get(r.to_id) ?? 0
+    }
     const propScore = propSum > 0 ? cap(Math.log10(propSum) * 10) : 0
     const contractScore = contractSum > 0 ? cap(Math.log10(contractSum) * 10) : 0
     const ef = cap(propScore * 0.5 + contractScore * 0.5)
 
-    // network_centrality (precomputed)
-    const nc = centralityScore.get(pid) ?? 0
+    // network_centrality: prefer the richer stored value from rebuild-graph, else degree
+    const nc = storedCentrality.get(pid) ?? centralityScore.get(pid) ?? 0
 
     // public_visibility
-    const mCount = mentionCountByPerson.get(pid) ?? 0
-    const tCount = recentTestimonyByPerson.get(pid) ?? 0
-    const news = cap((mCount / 50) * 100)
-    const tScore = cap((tCount / 20) * 100)
+    const news = cap(((mentionCountByPerson.get(pid) ?? 0) / 50) * 100)
+    const tScore = cap(((recentTestimonyByPerson.get(pid) ?? 0) / 20) * 100)
     const pv = cap(news * 0.6 + tScore * 0.4)
 
     const composite = cap(
-      pm * SCORE_WEIGHTS.political_money +
-      ip * SCORE_WEIGHTS.institutional_position +
-      lb * SCORE_WEIGHTS.lobbying +
-      ef * SCORE_WEIGHTS.economic_footprint +
-      nc * SCORE_WEIGHTS.network_centrality +
-      pv * SCORE_WEIGHTS.public_visibility
-    )
+      pm * SCORE_WEIGHTS.political_money + ip * SCORE_WEIGHTS.institutional_position + lb * SCORE_WEIGHTS.lobbying +
+      ef * SCORE_WEIGHTS.economic_footprint + nc * SCORE_WEIGHTS.network_centrality + pv * SCORE_WEIGHTS.public_visibility)
 
+    const r1 = (x: number) => Math.round(x * 10) / 10
     rows.push({
-      person_id: pid,
-      composite_score: Math.round(composite * 10) / 10,
-      political_money_score: Math.round(pm * 10) / 10,
-      institutional_position_score: Math.round(ip * 10) / 10,
-      lobbying_score: Math.round(lb * 10) / 10,
-      economic_footprint_score: Math.round(ef * 10) / 10,
-      network_centrality_score: Math.round(nc * 10) / 10,
-      public_visibility_score: Math.round(pv * 10) / 10,
-      computed_at: now,
-      score_version: SCORE_VERSION,
+      entity_id: pid, composite_score: r1(composite), political_money_score: r1(pm), institutional_position_score: r1(ip),
+      lobbying_score: r1(lb), economic_footprint_score: r1(ef), network_centrality_score: r1(nc), public_visibility_score: r1(pv),
     })
   }
 
-  // ── 13. Bulk upsert in chunks ──────────────────────────────────────────
+  // rank & percentile
+  rows.sort((a, b) => b.composite_score - a.composite_score)
+  rows.forEach((r, idx) => {
+    r.rank = idx + 1
+    r.percentile = Math.round(((rows.length - idx) / rows.length) * 10000) / 100
+  })
+  return rows
+}
+
+/** Compute and upsert ax_influence_score for all persons. Returns the number scored. */
+export async function recomputeAllScoresBatch(db: Db): Promise<number> {
+  const rows = await computeAllScores(db)
+  const now = new Date().toISOString()
   for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
     const chunk = rows.slice(i, i + UPSERT_CHUNK)
-    const { error } = await supabase
-      .from('ax_influence_score')
-      .upsert(chunk, { onConflict: 'person_id' })
-    if (error) throw new Error(`ax_influence_score upsert: ${error.message}`)
+    await db.query(
+      `insert into ax_influence_score(entity_id, composite_score, political_money_score, institutional_position_score, lobbying_score,
+                                      economic_footprint_score, network_centrality_score, public_visibility_score, rank, percentile, computed_at, score_version)
+       select * from unnest($1::uuid[], $2::numeric[], $3::numeric[], $4::numeric[], $5::numeric[], $6::numeric[], $7::numeric[], $8::numeric[], $9::int[], $10::numeric[], $11::timestamptz[], $12::int[])
+       on conflict (entity_id) do update set
+         composite_score = excluded.composite_score, political_money_score = excluded.political_money_score,
+         institutional_position_score = excluded.institutional_position_score, lobbying_score = excluded.lobbying_score,
+         economic_footprint_score = excluded.economic_footprint_score, network_centrality_score = excluded.network_centrality_score,
+         public_visibility_score = excluded.public_visibility_score, rank = excluded.rank, percentile = excluded.percentile,
+         computed_at = excluded.computed_at, score_version = excluded.score_version`,
+      [chunk.map(r => r.entity_id), chunk.map(r => r.composite_score), chunk.map(r => r.political_money_score), chunk.map(r => r.institutional_position_score),
+        chunk.map(r => r.lobbying_score), chunk.map(r => r.economic_footprint_score), chunk.map(r => r.network_centrality_score), chunk.map(r => r.public_visibility_score),
+        chunk.map(r => r.rank!), chunk.map(r => r.percentile!), chunk.map(() => now), chunk.map(() => SCORE_VERSION)])
   }
-
-  // ── 14. Rank & percentile ──────────────────────────────────────────────
-  const sorted = [...rows].sort((a, b) => b.composite_score - a.composite_score)
-  const updates = sorted.map((r, idx) => ({
-    person_id: r.person_id,
-    rank: idx + 1,
-    percentile: Math.round(((sorted.length - idx) / sorted.length) * 10000) / 100,
-    // carry through required columns so upsert doesn't null them
-    composite_score: r.composite_score,
-    political_money_score: r.political_money_score,
-    institutional_position_score: r.institutional_position_score,
-    lobbying_score: r.lobbying_score,
-    economic_footprint_score: r.economic_footprint_score,
-    network_centrality_score: r.network_centrality_score,
-    public_visibility_score: r.public_visibility_score,
-    computed_at: now,
-    score_version: SCORE_VERSION,
-  }))
-  for (let i = 0; i < updates.length; i += RANK_CHUNK) {
-    const chunk = updates.slice(i, i + RANK_CHUNK)
-    const { error } = await supabase
-      .from('ax_influence_score')
-      .upsert(chunk, { onConflict: 'person_id' })
-    if (error) throw new Error(`ax_influence_score rank upsert: ${error.message}`)
-  }
-
   return rows.length
 }

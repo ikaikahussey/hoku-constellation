@@ -1,0 +1,6 @@
+[
+  {"_id": 101, "Full Name": "Smith, John A.", "Organization": "Hawaii Gas", "Lobby Year": "2025-2026", "Registration Date": "2025-01-10", "Termination Date": "", "Amended": "False", "View": "https://ethics.hawaii.gov/docs/reg101.pdf"},
+  {"_id": 102, "Full Name": "Smith, John A.", "Organization": "Alexander & Baldwin, Inc.", "Lobby Year": "2025-2026", "Registration Date": "2025-01-12", "Termination Date": "2025-06-30", "Amended": "True"},
+  {"_id": 103, "Full Name": "Pua, Leilani", "Organization": "", "Lobby Year": "2025-2026", "Registration Date": "1/15/2025"},
+  {"_id": 104, "Full Name": "", "Organization": "No Lobbyist Inc"}
+]

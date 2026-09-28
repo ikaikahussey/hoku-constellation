@@ -1,19 +1,13 @@
 /**
- * Six dimension score functions, each returning a 0–100 value + evidence.
- * All take a SupabaseClient as the first argument — never construct internally.
+ * Six dimension score functions for a single person entity, each returning a 0–100 value + evidence.
+ * All take a `Db` as the first argument — never construct one internally. Reads only edge/entity.
  */
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Db } from '@/lib/db/types'
 import type { DimensionResult } from '../types'
 import { TITLE_TIERS } from './score-config'
 
-function cap(x: number): number {
-  return Math.max(0, Math.min(100, x))
-}
+function cap(x: number): number { return Math.max(0, Math.min(100, x)) }
 
-/**
- * Percentile rank of `value` in a sorted ascending array.
- * Returns 0–100. Used to scale raw sums against the population distribution.
- */
 function percentileRank(sorted: number[], value: number): number {
   if (sorted.length === 0) return 0
   let lo = 0, hi = sorted.length
@@ -25,189 +19,98 @@ function percentileRank(sorted: number[], value: number): number {
   return (lo / sorted.length) * 100
 }
 
-export async function scorePoliticalMoney(
-  supabase: SupabaseClient,
-  personId: string
-): Promise<DimensionResult> {
-  // Sum of donations made by this person (matched only)
-  const { data: donations } = await supabase
-    .from('contribution')
-    .select('amount, recipient_person_id, election_period')
-    .eq('donor_person_id', personId)
-    .neq('match_status', 'unmatched')
+export async function scorePoliticalMoney(db: Db, entityId: string): Promise<DimensionResult> {
+  const donations = await db.many<{ amount: string | null; to_id: string | null; election_period: string | null }>(
+    `select amount::text, to_id, attributes ->> 'election_period' election_period from edge
+      where type = 'contributed_to' and from_id = $1 and match_status <> 'unmatched'`, [entityId])
+  const given = donations.reduce((s, r) => s + Number(r.amount || 0), 0)
 
-  const given = (donations ?? []).reduce((s, r) => s + Number(r.amount || 0), 0)
-
-  // Build population distribution (could be cached/memoized in prod)
-  const { data: pop } = await supabase
-    .from('contribution')
-    .select('donor_person_id, amount')
-    .neq('match_status', 'unmatched')
-    .not('donor_person_id', 'is', null)
-    .limit(50000)
-  const totals = new Map<string, number>()
-  for (const row of pop ?? []) {
-    const id = String((row as { donor_person_id: string }).donor_person_id)
-    totals.set(id, (totals.get(id) ?? 0) + Number((row as { amount: number }).amount || 0))
-  }
-  const sorted = [...totals.values()].sort((a, b) => a - b)
+  const pop = await db.many<{ total: string }>(
+    `select sum(amount)::text total from edge where type = 'contributed_to' and from_id is not null and match_status <> 'unmatched' group by from_id`)
+  const sorted = pop.map(p => Number(p.total)).sort((a, b) => a - b)
   let value = percentileRank(sorted, given)
 
-  // +10 if donated to ≥5 distinct recipients in a single election_period
   const byPeriod = new Map<string, Set<string>>()
-  for (const d of donations ?? []) {
-    const period = (d.election_period ?? 'na') as string
-    const rec = (d.recipient_person_id ?? 'none') as string
+  for (const d of donations) {
+    const period = d.election_period ?? 'na'
     if (!byPeriod.has(period)) byPeriod.set(period, new Set())
-    byPeriod.get(period)!.add(rec)
+    byPeriod.get(period)!.add(d.to_id ?? 'none')
   }
   if ([...byPeriod.values()].some(s => s.size >= 5)) value += 10
 
-  // +15 if officer/treasurer of a PAC org
-  const { data: pacRoles } = await supabase
-    .from('relationship')
-    .select('id, relationship_type, target_org_id, organization:target_org_id(org_type)')
-    .eq('source_person_id', personId)
-    .in('relationship_type', ['officer', 'treasurer'])
-  if ((pacRoles ?? []).some(r => (r as { organization?: { org_type?: string } }).organization?.org_type === 'pac')) value += 15
+  const pac = await db.one<{ n: string }>(
+    `select count(*)::text n from edge e join entity o on o.id = e.to_id
+      where e.type = 'officer_of' and e.from_id = $1 and o.attributes ->> 'org_type' = 'pac'`, [entityId])
+  if (Number(pac?.n ?? 0) > 0) value += 15
 
   return { value: cap(value), evidence: { given_sum: given, distinct_periods: byPeriod.size } }
 }
 
-export async function scoreInstitutionalPosition(
-  supabase: SupabaseClient,
-  personId: string
-): Promise<DimensionResult> {
-  const { data: person } = await supabase
-    .from('person')
-    .select('entity_types, office_held')
-    .eq('id', personId)
-    .single()
-
-  const { data: rels } = await supabase
-    .from('relationship')
-    .select('id, title, relationship_type, target_org_id, is_current')
-    .eq('source_person_id', personId)
-    .eq('is_current', true)
-
+export async function scoreInstitutionalPosition(db: Db, entityId: string): Promise<DimensionResult> {
+  const person = await db.one<{ office_held: string | null }>(`select attributes ->> 'office_held' office_held from entity where id = $1`, [entityId])
+  const rels = await db.many<{ role: string | null }>(
+    `select role from edge where from_id = $1 and type in ('employed_by','officer_of','director_of','member_of','appointed_to')
+       and end_date is null and coalesce((attributes ->> 'is_current')::boolean, true)`, [entityId])
   let best = 0
-  if (person?.office_held) {
-    const key = person.office_held.toLowerCase()
-    for (const [tier, score] of Object.entries(TITLE_TIERS)) {
-      if (key.includes(tier)) best = Math.max(best, score)
-    }
+  const office = (person?.office_held ?? '').toLowerCase()
+  for (const [tier, score] of Object.entries(TITLE_TIERS)) if (office.includes(tier)) best = Math.max(best, score)
+  for (const r of rels) {
+    const title = (r.role ?? '').toLowerCase()
+    for (const [tier, score] of Object.entries(TITLE_TIERS)) if (title.includes(tier)) best = Math.max(best, score)
   }
-  for (const r of rels ?? []) {
-    const title = (r.title ?? '').toLowerCase()
-    for (const [tier, score] of Object.entries(TITLE_TIERS)) {
-      if (title.includes(tier)) best = Math.max(best, score)
-    }
-  }
-  const extra = Math.min(20, Math.max(0, (rels?.length ?? 1) - 1) * 5)
-  return { value: cap(best + extra), evidence: { best, extra, role_count: rels?.length ?? 0 } }
+  const extra = Math.min(20, Math.max(0, rels.length - 1) * 5)
+  return { value: cap(best + extra), evidence: { best, extra, role_count: rels.length } }
 }
 
-export async function scoreLobbying(
-  supabase: SupabaseClient,
-  personId: string
-): Promise<DimensionResult> {
-  const { data: regs } = await supabase
-    .from('lobbyist_registration')
-    .select('id')
-    .eq('lobbyist_person_id', personId)
-
+export async function scoreLobbying(db: Db, entityId: string): Promise<DimensionResult> {
+  const regs = await db.one<{ n: string }>(`select count(*)::text n from edge where type = 'lobbied_for' and from_id = $1`, [entityId])
+  const isRegistered = Number(regs?.n ?? 0) > 0
   let base = 0
-  if ((regs ?? []).length > 0) {
-    const { data: exp } = await supabase
-      .from('lobbyist_expenditure')
-      .select('amount')
-      .eq('lobbyist_person_id', personId)
-    const total = (exp ?? []).reduce((s, r) => s + Number(r.amount || 0), 0)
-    base = cap(Math.log10(Math.max(1, total)) * 15)
+  if (isRegistered) {
+    const exp = await db.one<{ total: string | null }>(`select sum(amount)::text total from edge where type = 'spent_with' and from_id = $1`, [entityId])
+    base = cap(Math.log10(Math.max(1, Number(exp?.total ?? 0))) * 15)
   } else {
-    const { data: testimony } = await supabase
-      .from('legislative_testimony')
-      .select('bill_number, session')
-      .eq('person_id', personId)
-    base = cap(((testimony?.length ?? 0) / 20) * 100)
+    const t = await db.many<{ to_id: string | null; session: string | null }>(
+      `select to_id, attributes ->> 'session' session from edge where type = 'testified_on' and from_id = $1`, [entityId])
+    base = cap((t.length / 20) * 100)
     const perSession = new Map<string, Set<string>>()
-    for (const t of testimony ?? []) {
-      const key = (t.session ?? 'na') as string
+    for (const row of t) {
+      const key = row.session ?? 'na'
       if (!perSession.has(key)) perSession.set(key, new Set())
-      perSession.get(key)!.add(t.bill_number)
+      if (row.to_id) perSession.get(key)!.add(row.to_id)
     }
     if ([...perSession.values()].some(s => s.size >= 5)) base += 10
   }
-  return { value: cap(base), evidence: { is_registered: (regs?.length ?? 0) > 0 } }
+  return { value: cap(base), evidence: { is_registered: isRegistered } }
 }
 
-export async function scoreEconomicFootprint(
-  supabase: SupabaseClient,
-  personId: string
-): Promise<DimensionResult> {
-  const { data: props } = await supabase
-    .from('property_ownership')
-    .select('assessed_value')
-    .eq('owner_person_id', personId)
-  const propSum = (props ?? []).reduce((s, r) => s + Number(r.assessed_value || 0), 0)
-
-  // Contracts via orgs where person is officer
-  const { data: orgRoles } = await supabase
-    .from('relationship')
-    .select('target_org_id')
-    .eq('source_person_id', personId)
-    .in('relationship_type', ['officer', 'director', 'board_member'])
-  const orgIds = [...new Set((orgRoles ?? []).map(r => r.target_org_id).filter(Boolean))] as string[]
-
-  let contractSum = 0
-  if (orgIds.length > 0) {
-    const { data: contracts } = await supabase
-      .from('government_contract')
-      .select('contract_amount')
-      .in('vendor_org_id', orgIds)
-    contractSum = (contracts ?? []).reduce((s, r) => s + Number(r.contract_amount || 0), 0)
-  }
-
+export async function scoreEconomicFootprint(db: Db, entityId: string): Promise<DimensionResult> {
+  const prop = await db.one<{ total: string | null }>(
+    `select sum((attributes ->> 'assessed_value')::numeric)::text total from edge where type = 'owns' and from_id = $1`, [entityId])
+  const propSum = Number(prop?.total ?? 0)
+  const contracts = await db.one<{ total: string | null }>(
+    `select sum(c.amount)::text total from edge r join edge c on c.to_id = r.to_id and c.type in ('awarded_contract','awarded_grant')
+      where r.from_id = $1 and r.type in ('officer_of','director_of')`, [entityId])
+  const contractSum = Number(contracts?.total ?? 0)
   const propScore = propSum > 0 ? cap(Math.log10(propSum) * 10) : 0
   const contractScore = contractSum > 0 ? cap(Math.log10(contractSum) * 10) : 0
-  const value = cap(propScore * 0.5 + contractScore * 0.5)
-  return { value, evidence: { property_sum: propSum, contract_sum: contractSum } }
+  return { value: cap(propScore * 0.5 + contractScore * 0.5), evidence: { property_sum: propSum, contract_sum: contractSum } }
 }
 
-/**
- * Network centrality is precomputed elsewhere; this reader returns the cached
- * value if present in ax_influence_score, else 0.
- */
-export async function scoreNetworkCentrality(
-  supabase: SupabaseClient,
-  personId: string
-): Promise<DimensionResult> {
-  const { data } = await supabase
-    .from('ax_influence_score')
-    .select('network_centrality_score')
-    .eq('person_id', personId)
-    .maybeSingle()
-  return { value: Number(data?.network_centrality_score ?? 0), evidence: { cached: true } }
+/** Network centrality is precomputed by rebuild-graph; return the cached value if present. */
+export async function scoreNetworkCentrality(db: Db, entityId: string): Promise<DimensionResult> {
+  const row = await db.one<{ v: string | null }>(`select network_centrality_score::text v from ax_influence_score where entity_id = $1`, [entityId])
+  return { value: Number(row?.v ?? 0), evidence: { cached: true } }
 }
 
-export async function scorePublicVisibility(
-  supabase: SupabaseClient,
-  personId: string
-): Promise<DimensionResult> {
-  const { count: mentionCount } = await supabase
-    .from('article_entity_mention')
-    .select('id', { count: 'exact', head: true })
-    .eq('person_id', personId)
-
-  const twoYearsAgo = new Date()
-  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2)
-  const { count: testimonyCount } = await supabase
-    .from('legislative_testimony')
-    .select('id', { count: 'exact', head: true })
-    .eq('person_id', personId)
-    .gte('hearing_date', twoYearsAgo.toISOString().slice(0, 10))
-
-  const news = cap(((mentionCount ?? 0) / 50) * 100)
-  const testimony = cap(((testimonyCount ?? 0) / 20) * 100)
-  return { value: cap(news * 0.6 + testimony * 0.4), evidence: { mentions: mentionCount, testimonies: testimonyCount } }
+export async function scorePublicVisibility(db: Db, entityId: string): Promise<DimensionResult> {
+  const twoYearsAgo = new Date(); twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2)
+  const row = await db.one<{ mentions: string; testimonies: string }>(
+    `select (select count(*) from edge e join document d on d.id = e.document_id where e.type = 'mentioned_in' and e.from_id = $1 and d.doc_type = 'article')::text mentions,
+            (select count(*) from edge where type = 'testified_on' and from_id = $1 and start_date >= $2)::text testimonies`,
+    [entityId, twoYearsAgo.toISOString().slice(0, 10)])
+  const mentions = Number(row?.mentions ?? 0), testimonies = Number(row?.testimonies ?? 0)
+  const news = cap((mentions / 50) * 100)
+  const t = cap((testimonies / 20) * 100)
+  return { value: cap(news * 0.6 + t * 0.4), evidence: { mentions, testimonies } }
 }

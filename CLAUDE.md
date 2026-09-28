@@ -1,90 +1,89 @@
 @AGENTS.md
 
-# Hoku Constellation — Data & Analytics
+# HOKU Insider
 
-Hoku Constellation is a power tracker for Hawaiʻi public life and a premium subscription product for Hoku.FM.
+HOKU Insider maps Hawaiʻi's power structure: who holds office, who funds whom, who lobbies, who
+owns what, and how they connect. It is a premium subscription product from Hoku.fm.
 
-Production: https://constellation.hoku.fm  ·  Repo: https://github.com/ikaikahussey/hoku-constellation
+Production: https://constellation.hoku.fm (domain unchanged by the rebrand; `NEXT_PUBLIC_SITE_URL`
+is the single source of truth). Repo: https://github.com/ikaikahussey/hoku-constellation.
 
 ## Stack
 
-Next.js 16 (App Router), TypeScript, React 19, Supabase (Postgres + Auth + RLS + SSR), Stripe, D3 v7, Recharts v3, Fuse.js, Tailwind CSS v4, Vercel.
+Next.js 16 (App Router, `proxy.ts` not middleware, async `params`/`cookies()`), React 19,
+TypeScript, Tailwind CSS v4 (`@theme` tokens), Neon Postgres (pgvector, pg_trgm, RLS),
+Neon Auth (Managed Better Auth), Neon Data API (PostgREST), Stripe, PostHog, Vercel Speed Insights,
+D3 v7, Recharts v3. Tests: Vitest on PGlite (no Docker), Playwright for e2e.
 
-## Schema (migrations 001–015)
+## Schema — five core tables (`db/migrations/001_core_schema.sql`)
 
-Use existing table/column names exactly.
+| table | purpose |
+|---|---|
+| `entity` | people, organizations, bills, dockets, parcels, offices. `kind`, `name`, `aliases`, `identifiers` jsonb (ein, fec_id, sec_cik, measure, docket_number, tmk, csc_reg_no…), `attributes` jsonb validated per kind by `lib/schema/attributes.ts`, `merged_into_id` |
+| `document` | every source record: `source`, `source_record_id`, `doc_type`, `checksum` (sha256 of the canonicalized raw record), `raw` jsonb, `body_text`, `embedding` vector(1024) |
+| `edge` | one fact from one document: `type` (23-value vocabulary, `docs/EDGE_TYPES.md`), `from_id`/`to_id`, `from_name_raw`/`to_name_raw`, `role`, `amount`, dates, `match_status` (matched/review/unmatched), `match_confidence`, `document_id`. Unique on (document_id, type, from_name_raw, to_name_raw, role) |
+| `summary` | generated narrative per entity with `tier` and `status` |
+| `user_account` | Neon Auth user id → `subscription_tier`, Stripe fields, `is_staff`, `watch_entity_ids` |
 
-- **Core entities**: `person` (`full_name`, `aliases` text[], `entity_types` text[]), `organization` (`name`, `aliases` text[], `org_type`, plus `ein` / `dcca_file_number` / `sec_cik` / `fec_committee_id` added in 015)
-- **Relationships**: `relationship` — polymorphic edge table with `source_person_id`, `source_org_id`, `target_person_id`, `target_org_id`, `relationship_type`, `title`, `start_date`, `end_date`, `is_current`. Handles officer/director roles, board appointments, lobbyist-client, person-person, org-org.
-- **Campaign finance**: `contribution` — `donor_name_raw`, `recipient_name_raw`, `donor_person_id`, `donor_org_id`, `recipient_person_id`, `recipient_org_id`, `match_confidence`, `match_status`, `amount`, `contribution_date`, `election_period`, `source`, `raw_record` jsonb
-- **Lobbying**: `lobbyist_registration`, `lobbyist_expenditure`, `org_lobbying_expenditure`
-- **Ethics**: `financial_disclosure` — `financial_interests` jsonb
-- **PUC**: `puc_docket`, `puc_participant`
-- **Editorial**: `article`, `article_entity_mention`
-- **Timeline**: `timeline_event`
-- **Auth/billing**: `user_profile` (`subscription_tier`, Stripe fields, `alert_person_ids`), `staff_role`
-- **Ingestion state**: `import_cursor` (`source`, `cursor_offset`, `last_run_at`, `status`, `metadata` jsonb)
-- **New in 015**:
-  - Canonical ingestion targets: `legislative_testimony`, `government_contract`, `property_ownership`, `data_source_record`
-  - Analytics derived (writable only by service role, can be dropped and rebuilt): `ax_influence_score`, `ax_relationship_edge`, `ax_alert`, `ax_graph_snapshot`
+Supporting: `import_cursor`, `migration_user_map`, and the derived `ax_influence_score`,
+`ax_relationship_edge`, `ax_alert`, `ax_graph_snapshot` (rebuildable; service role only).
+Legacy Supabase migrations are archived in `db/legacy_migrations/` and are not applied.
 
-All new ingestion tables follow the `match_status` / `match_confidence` / `*_name_raw` / `raw_record` pattern from `contribution`.
+Access is gated in SQL (`app.is_paid()`, `app.paid_doc_types()`, `app.paid_edge_types()`) and
+mirrored in `lib/db/gating.ts`. Free tier sees public doc/edge types; paid sees money, lobbying,
+property, and ethics types; staff sees everything including `review`/`unmatched` edges.
 
-## Architecture — two separate modules
+## Code layout
 
-### Ingestion — `scripts/import/`
-
-Standalone TypeScript scripts. Write to canonical tables via `SUPABASE_SERVICE_ROLE_KEY`. Never import from `lib/analytics/`.
-
-Phase 1 sources (already present): `campaign-finance.ts`, `lobbyist-registrations.ts`, `articles.ts`, `financial-disclosures.ts`, `lobbyist-expenditures.ts`.
-
-Added in 015: `usaspending.ts`, `propublica-990.ts`, `sec-edgar.ts`, `testimony.ts`, `property.ts`, `state-procurement.ts`.
-
-Every fetcher is idempotent: SHA-256 checksum dedup via `data_source_record` (helper `scripts/import/utils/dedup.ts`), cursor via `import_cursor`.
-
-Entity resolution lives in `lib/entity-match.ts` — exact-match on structured identifiers (`matchOrganizationByExternalId`) before fuzzy Levenshtein fallback (`matchEntity`). `normalize()` handles ʻokina variants and kahakō so "Kauaʻi" matches "Kauai".
-
-### Analytics — `lib/analytics/`
-
-TypeScript library. Reads canonical tables, writes `ax_*` tables. Never imports from `scripts/`. All exported functions take `SupabaseClient` as first argument — never call `createClient()` internally.
-
-```
-lib/analytics/
-├── types.ts
-├── scoring/           # score-config, dimension-scores, influence-score
-├── graph/             # builder, centrality (Brandes + eigenvector, pure TS), pathfinder, clusters, serializer
-├── alerts/            # alert-rules, change-detector, alert-store
-├── profiles/          # person-profile, org-profile, comparison
-├── reports/           # power-map, money-flow (getBillLandscape), issue-tracker, network-report
-└── index.ts
-```
-
-API routes in `app/api/analytics/`:
-
-- `GET /person/[id]/profile` · `GET /person/[id]/score` · `GET /person/[id]/network`
-- `GET /org/[id]/profile`
-- `GET /connect/[idA]/[idB]`
-- `GET /power-map` · `GET /money-flow/bill/[billNumber]` · `GET /alerts` · `GET /clusters`
-- `POST /admin/recompute-scores` · `POST /admin/rebuild-graph` · `POST /admin/detect-changes` (Bearer `CRON_SECRET`, service role)
-
-React components in `components/analytics/`: `NetworkGraph.tsx` (D3 force), `InfluenceScoreCard.tsx` (Recharts radar), `PowerMapTable.tsx`, `AlertFeed.tsx`.
-
-Vercel Cron (`vercel.json`): graph rebuild 09:00 UTC, scores 10:00 UTC, change detection hourly.
+- `lib/db/` — `Db` interface (`query`, `one`, `many`, `transaction`, `end`); `getServiceDb()`
+  (service role, server only), `getUserClient()` (Data API with the session JWT, RLS enforced),
+  `queries/` (entities, edges, money, documents, summaries, search, accounts). Every analytics or
+  query function takes `Db` as its first argument. Never create a connection inside a library function.
+- `lib/auth.ts` — `getAuth()`, `getCurrentUser()` → `{ account, isStaff, canAccessGated, … }`.
+- `lib/entity-match.ts` — `normalize()` (ʻokina/kahakō aware), `matchByIdentifier(s)`,
+  `fuzzyMatch`, `resolveEntity` (identifier → fuzzy; bills/dockets/parcels never fuzzy-merge;
+  follows `merged_into_id`).
+- `lib/analytics/` — scoring, graph (pure TS centrality/pathfinding), alerts, profiles, reports.
+  Reads core tables, writes `ax_*`. Never imports from `lib/import/`.
+- `lib/import/` — ingestion: `http.ts` (polite client), `clients/`, `pipeline.ts`
+  (`upsertDocument` → `resolveRef` → `insertEdge`, `processRecord`), `run.ts` (`runImporter`,
+  `--dry`), `source-registry.ts`, `sources/<source>.ts` exporting `SOURCE_KEY` + `importBatch(db, offset, batchSize, opts)`.
+  Never imports from `lib/analytics/`.
+- `scripts/import/<source>.ts` CLI wrappers; `workers/import-<source>.ts` + `workers/launchd/*.plist`
+  for the Mac mini; `scripts/db/` port, reconcile, user migration, parity tools.
+- `app/api/analytics/**` (subscriber routes), `app/api/v1/**` (API tier), `app/api/admin/**`
+  (staff session), `app/api/auth/[...path]` (Neon Auth handler), `app/api/webhook/stripe`.
+- `components/brand/Wordmark.tsx`, `components/ui/*`, `components/graph/*`, `components/analytics/*`.
+- `app/providers.tsx` + `lib/analytics-events.ts` — PostHog. Event names only from `EVENTS`.
 
 ## Rules
 
-- Use existing table and column names exactly. `full_name`, not `canonical_name`. `aliases`, not `name_variants`. `relationship`, not `person_organization_role`.
-- Board appointments go in `relationship` with `relationship_type = 'appointed_to'` and `title` = board name.
-- `relationship` = observed factual connections. `ax_relationship_edge` = analytically derived connections. Do not conflate.
-- Analytics functions accept `SupabaseClient` as first parameter. Ingestion scripts use `SUPABASE_SERVICE_ROLE_KEY`. Analytics API routes use user auth context except admin/cron routes, which use `Bearer CRON_SECRET` + service role.
-- Graph algorithms are pure TypeScript; no additional npm packages.
-- Tests: Vitest + Supabase local dev. No production data in tests.
+- Use existing table and column names exactly. `entity.name`, not `full_name`; `edge`, not `relationship`.
+- Observed facts go in `edge`; analytically derived links go in `ax_relationship_edge`. Never conflate.
+- Importers: document first (checksum dedup), then resolve entities, then edges. Only create entities
+  from authoritative rosters or when an identifier is present; otherwise leave `*_name_raw` for review.
+- Design: black and white only, red `#CC0000` for links only, colors defined once in
+  `app/globals.css` `@theme`, weights 400/700, Helvetica stack. `tests/design-tokens.test.ts` and
+  the ESLint `no-restricted-syntax` rule fail on literals elsewhere. `docs/REBRAND.md` has the details.
+- Product name is "HOKU Insider" (HOKU uppercase). `tests/brand-name.test.ts` fails on
+  the former product name outside the domain, repo name, launchd labels, and env/DB identifiers.
+- Analytics events: names from `EVENTS`; never send emails, names, or raw search text; identify with
+  `subscription_tier`, `is_staff`, `signup_date` only.
+- Never bypass auth, CAPTCHA, or terms of service when fetching. Never ingest the voter registration file.
+- Tests run on PGlite (`tests/helpers/pglite.ts`); set `TEST_DATABASE_URL` to run them on a Neon branch.
+  No production data in tests.
 
-## Key files
+## Commands
 
-- `supabase/migrations/015_add_ingestion_and_analytics_tables.sql`
-- `lib/entity-match.ts`, `scripts/import/utils/dedup.ts`
-- `lib/analytics/**`
-- `app/api/analytics/**`
-- `components/analytics/**`
-- `vercel.json`
+```
+npm run dev · npm run build · npm run lint · npm run typecheck · npm test
+npx tsx --tsconfig tsconfig.scripts.json scripts/import/<source>.ts --dry --limit=50
+npx tsx --tsconfig tsconfig.scripts.json scripts/db/port-legacy.ts --markdown docs/PORT_RECONCILIATION.md
+npx playwright test tests/e2e
+```
+
+## Key docs
+
+`docs/NEON_CUTOVER.md`, `docs/MIGRATION_INVENTORY.md`, `docs/PORT_RECONCILIATION.md`,
+`docs/EDGE_TYPES.md`, `docs/REBRAND.md`, `docs/ANALYTICS_EVENTS.md`, `docs/INGESTION_AUDIT.md`,
+`docs/INGESTION_REPORT.md`.

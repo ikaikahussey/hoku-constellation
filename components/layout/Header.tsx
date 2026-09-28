@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { Wordmark } from '@/components/brand/Wordmark'
+import { buttonClass } from '@/components/ui/Button'
 
 const navLinks = [
   { href: '/search', label: 'Search' },
@@ -9,47 +11,45 @@ const navLinks = [
   { href: '/pricing', label: 'Pricing' },
 ]
 
-export function Header() {
+interface HeaderProps {
+  /** When true, the right side shows "Account" instead of "Log in". */
+  signedIn?: boolean
+}
+
+export function Header({ signedIn = false }: HeaderProps) {
   const pathname = usePathname()
 
   return (
-    <header className="border-b border-white/10 bg-navy/95 backdrop-blur-sm sticky top-0 z-50">
+    <header className="sticky top-0 z-50 bg-paper border-b border-rule">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          <Link href="/" className="flex items-center gap-2">
-            <span className="text-lg font-bold text-white tracking-tight">HOKU</span>
-            <span className="text-lg font-light text-white/80 tracking-wider">CONSTELLATION</span>
+        <div className="flex items-center justify-between h-14">
+          <Link href="/" aria-label="HOKU Insider home" className="flex items-center text-ink">
+            <Wordmark height={20} />
           </Link>
 
-          <nav className="hidden md:flex items-center gap-6">
-            {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`text-sm transition-colors ${
-                  pathname === link.href
-                    ? 'text-gold font-medium'
-                    : 'text-white/60 hover:text-white'
-                }`}
-              >
-                {link.label}
-              </Link>
-            ))}
+          <nav aria-label="Primary" className="hidden md:flex items-center gap-6">
+            {navLinks.map(link => {
+              const active = pathname === link.href || pathname.startsWith(`${link.href}/`)
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  aria-current={active ? 'page' : undefined}
+                  className={`text-sm ${active ? 'font-bold' : ''}`}
+                >
+                  {link.label}
+                </Link>
+              )
+            })}
           </nav>
 
-          <div className="flex items-center gap-3">
-            <Link
-              href="/auth/login"
-              className="text-sm text-white/60 hover:text-white transition-colors"
-            >
-              Log in
-            </Link>
-            <Link
-              href="/auth/signup"
-              className="text-sm bg-gold text-navy px-4 py-2 rounded-md font-semibold hover:bg-gold-light transition-colors"
-            >
-              Subscribe
-            </Link>
+          <div className="flex items-center gap-4">
+            {signedIn ? (
+              <Link href="/account" className="text-sm link-quiet">Account</Link>
+            ) : (
+              <Link href="/auth/login" className="text-sm link-quiet">Log in</Link>
+            )}
+            <Link href="/pricing" className={buttonClass('secondary', 'sm')}>Subscribe</Link>
           </div>
         </div>
       </div>

@@ -1,76 +1,59 @@
 import Link from 'next/link'
+import type { EdgeWithEnds } from '@/lib/db/queries/edges'
+import { otherEnd, isCurrent, typeLabel, dateRange } from './edges'
 
 interface RelationshipListProps {
-  relationships: Record<string, unknown>[]
-  centerId: string
-  centerType: 'person' | 'organization'
+  edges: EdgeWithEnds[]
+  entityId: string
+  emptyMessage?: string
 }
 
-export function RelationshipList({ relationships, centerId, centerType }: RelationshipListProps) {
-  if (relationships.length === 0) {
-    return <p className="text-white/30 text-sm py-4">No connections documented yet.</p>
-  }
+/** Groups an entity's position edges by type and renders the other party, role, and dates. */
+export function RelationshipList({ edges, entityId, emptyMessage = 'No connections documented yet.' }: RelationshipListProps) {
+  if (edges.length === 0) return <p className="text-sm text-muted py-4">{emptyMessage}</p>
 
-  // Group by relationship type
-  const grouped: Record<string, Record<string, unknown>[]> = {}
-  for (const rel of relationships) {
-    const type = (rel.relationship_type as string) || 'other'
-    if (!grouped[type]) grouped[type] = []
-    grouped[type].push(rel)
+  const grouped = new Map<string, EdgeWithEnds[]>()
+  for (const edge of edges) {
+    const list = grouped.get(edge.type) ?? []
+    list.push(edge)
+    grouped.set(edge.type, list)
   }
 
   return (
-    <div className="space-y-6">
-      {Object.entries(grouped).map(([type, rels]) => (
-        <div key={type}>
-          <h3 className="text-sm font-semibold text-white/40 uppercase tracking-wider mb-3">
-            {type.replace(/_/g, ' ')}
+    <div className="space-y-8">
+      {[...grouped.entries()].map(([type, list]) => (
+        <section key={type}>
+          <h3 className="text-xs font-bold uppercase tracking-wide mb-2 pb-1 border-b border-ink">
+            {typeLabel(type)} <span className="text-muted font-normal tabular">({list.length})</span>
           </h3>
-          <div className="space-y-2">
-            {rels.map((rel) => {
-              // Determine the "other" entity in this relationship
-              const isSource = (centerType === 'person' && (rel.source_person_id === centerId)) ||
-                               (centerType === 'organization' && (rel.source_org_id === centerId))
-
-              const targetPerson = isSource ? rel.target_person as Record<string, unknown> | null : rel.source_person as Record<string, unknown> | null
-              const targetOrg = isSource ? rel.target_org as Record<string, unknown> | null : rel.source_org as Record<string, unknown> | null
-              const target = targetPerson || targetOrg
-              const targetType = targetPerson ? 'person' : 'organization'
-
-              if (!target) return null
-
-              const name = (target.full_name || target.name) as string
-              const slug = target.slug as string
-              const href = targetType === 'person' ? `/person/${slug}` : `/org/${slug}`
-
+          <ul className="divide-y divide-rule">
+            {list.map(edge => {
+              const other = otherEnd(edge, entityId)
+              const current = isCurrent(edge)
+              const range = dateRange(edge)
               return (
-                <div key={rel.id as string} className="flex items-center justify-between bg-navy-light rounded-md border border-white/5 p-3">
-                  <div className="flex items-center gap-3">
-                    <span className={`w-2 h-2 rounded-full ${targetType === 'person' ? 'bg-gold' : 'bg-ocean'}`} />
-                    <div>
-                      <Link href={href} className="text-sm font-medium text-white hover:text-gold transition-colors">
-                        {name}
-                      </Link>
-                      {rel.title ? (
-                        <p className="text-xs text-white/40">{String(rel.title)}</p>
-                      ) : null}
-                    </div>
+                <li key={edge.id} className="py-2.5 flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="font-bold">
+                      {other.href ? <Link href={other.href} className="link-quiet">{other.name}</Link> : other.name}
+                      {edge.match_status !== 'matched' && <span className="ml-2 text-xs text-muted font-normal">(unverified match)</span>}
+                    </p>
+                    {edge.role && <p className="text-sm text-muted">{edge.role}</p>}
                   </div>
-                  <div className="flex items-center gap-2">
-                    {!rel.is_current ? (
-                      <span className="text-xs text-white/30">former</span>
-                    ) : null}
-                    {rel.source_description ? (
-                      <span className="text-xs text-white/20" title={String(rel.source_description)}>
-                        sourced
-                      </span>
-                    ) : null}
+                  <div className="text-right text-xs text-muted flex-shrink-0 tabular">
+                    {range && <div>{range}</div>}
+                    {!current && <div>former</div>}
+                    {edge.doc_url ? (
+                      <a href={edge.doc_url} target="_blank" rel="noopener noreferrer">{edge.doc_source.replace(/_/g, ' ')}</a>
+                    ) : (
+                      <div>{edge.doc_source.replace(/_/g, ' ')}</div>
+                    )}
                   </div>
-                </div>
+                </li>
               )
             })}
-          </div>
-        </div>
+          </ul>
+        </section>
       ))}
     </div>
   )
