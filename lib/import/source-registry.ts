@@ -155,9 +155,16 @@ export const SOURCE_REGISTRY: SourceDefinition[] = [
     docTypes: ['entity_registration', 'exclusion'], edgeTypes: ['sanctioned_by'], entityKinds: ['org'], cadence: 'weekly', tier: 1, status: 'planned', secrets: ['SAM_API_KEY'],
   },
   {
-    key: 'irs_eo', name: 'IRS — Exempt Organizations BMF & 990 e-file', agency: 'Internal Revenue Service',
-    jurisdiction: 'federal', accessMethod: 'bulk_download', baseUrl: 'https://www.irs.gov',
-    docTypes: ['irs_990'], edgeTypes: ['officer_of', 'director_of'], entityKinds: ['org', 'person'], cadence: 'monthly', tier: 1, status: 'planned',
+    key: 'irs_eo', name: 'IRS — Exempt Organizations Business Master File (Hawaiʻi)', agency: 'Internal Revenue Service',
+    jurisdiction: 'federal', accessMethod: 'bulk_download', baseUrl: 'https://www.irs.gov/pub/irs-soi/eo_hi.csv',
+    docTypes: ['entity_registration'], edgeTypes: [], entityKinds: ['org'], cadence: 'monthly', tier: 1, status: 'live',
+    notes: 'Every tax-exempt organization with a Hawaiʻi address (≈9,700): EIN, legal name, address, 501(c) subsection, ruling date, NTEE, assets/income. Public domain; refreshed monthly by the IRS.',
+  },
+  {
+    key: 'gleif', name: 'GLEIF — Legal Entity Identifiers for Hawaiʻi-formed entities', agency: 'Global Legal Entity Identifier Foundation',
+    jurisdiction: 'state', accessMethod: 'api', baseUrl: 'https://api.gleif.org/api/v1/lei-records?filter%5Bentity.jurisdiction%5D=US-HI',
+    docTypes: ['entity_registration'], edgeTypes: ['owns'], entityKinds: ['org'], cadence: 'monthly', tier: 2, status: 'live',
+    notes: 'CC0. ≈430 entities formed under Hawaiʻi law; records registered at RA000605 carry the DCCA BREG file number (registeredAs), the only open source of it. Level 2 direct parents become owns edges.',
   },
   {
     key: 'propublica_990', name: 'ProPublica Nonprofit Explorer', agency: 'ProPublica',
@@ -169,6 +176,12 @@ export const SOURCE_REGISTRY: SourceDefinition[] = [
     jurisdiction: 'federal', accessMethod: 'api', baseUrl: 'https://data.sec.gov', urls: ['https://efts.sec.gov'],
     docTypes: ['sec_filing'], edgeTypes: ['officer_of', 'director_of'], entityKinds: ['org', 'person'], cadence: 'weekly', tier: 1, status: 'live',
     notes: 'Requires descriptive User-Agent; ≤ 10 req/s.',
+  },
+  {
+    key: 'sec_hi_companies', name: 'SEC EDGAR — every filer with a Hawaiʻi business address', agency: 'U.S. Securities and Exchange Commission',
+    jurisdiction: 'federal', accessMethod: 'api', baseUrl: 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&State=HI&output=atom', urls: ['https://data.sec.gov'],
+    docTypes: ['entity_registration'], edgeTypes: [], entityKinds: ['org'], cadence: 'monthly', tier: 1, status: 'live',
+    notes: '≈780 filers, mostly private companies filing Form D. Name, EIN, state of incorporation, SIC and former names from data.sec.gov submissions. Insider-only filers (individuals) skipped. Descriptive User-Agent; ≤ 10 req/s.',
   },
   // ============================================================ Tier 1 — Counties
   {
@@ -237,10 +250,10 @@ export const SOURCE_REGISTRY: SourceDefinition[] = [
   },
   // ============================================================ Tier 2 — State
   {
-    key: 'dcca_breg', name: 'DCCA Business Registration — officers & registered agents', agency: 'DCCA BREG',
-    jurisdiction: 'state', accessMethod: 'html', baseUrl: 'https://hbe.ehawaii.gov/documents/search.html',
-    docTypes: ['business_registration'], edgeTypes: ['officer_of', 'director_of'], entityKinds: ['org', 'person'], cadence: 'monthly', tier: 2, status: 'planned',
-    notes: 'Per-entity lookups for existing orgs only; UIPA bulk export is the alternative.',
+    key: 'dcca_breg', name: 'DCCA Business Registration — registry export (Entity List Builder or UIPA)', agency: 'DCCA BREG',
+    jurisdiction: 'state', accessMethod: 'manual_uipa', baseUrl: 'https://hbe.dcca.hawaii.gov/entity-list-builder',
+    docTypes: ['business_registration'], edgeTypes: ['officer_of', 'director_of'], entityKinds: ['org', 'person'], cadence: 'monthly', tier: 1, status: 'manual',
+    notes: 'The portal (hbe.dcca.hawaii.gov, formerly hbe.ehawaii.gov) is robots.txt "Disallow: /" and reCAPTCHA-protected: never fetched. Load a purchased Entity List Builder export or a UIPA extract as CSV via scripts/import/dcca-breg.ts --file= or the /admin/import upload. See docs/HAWAII_CORPORATIONS.md.',
   },
   {
     key: 'dcca_pvl', name: 'DCCA Professional & Vocational Licensing', agency: 'DCCA PVL',

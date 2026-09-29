@@ -14,7 +14,20 @@ import type { ImportOptions, SourcePage } from '../types'
 import { load } from 'cheerio'
 
 export const SOURCE_KEY = 'sec_edgar'
-export const DEFAULT_CIKS = ['0000046619', '0000003906', '0001616862', '0000046195', '0000036377'] // HEI, A&B, Matson, BOH, FHB (First Hawaiian)
+/**
+ * Hawaiʻi-headquartered SEC registrants, verified against data.sec.gov/submissions on 2026-09-29.
+ * (The earlier list pointed HEI, A&B and Matson at HEICO, Allied Capital and Axalta.)
+ */
+export const HAWAII_REGISTRANTS: Record<string, string> = {
+  '0000354707': 'Hawaiian Electric Industries, Inc.',
+  '0000046207': 'Hawaiian Electric Company, Inc.',
+  '0001545654': 'Alexander & Baldwin, Inc.',
+  '0000003453': 'Matson, Inc.',
+  '0000046195': 'Bank of Hawaii Corporation',
+  '0000036377': 'First Hawaiian, Inc.',
+  '0000701347': 'Central Pacific Financial Corp.',
+}
+export const DEFAULT_CIKS = Object.keys(HAWAII_REGISTRANTS)
 const SUBMISSIONS = (cik: string) => `https://data.sec.gov/submissions/CIK${cik.padStart(10, '0')}.json`
 const UA = { 'user-agent': `${USER_AGENT} research@hoku.fm` }
 
