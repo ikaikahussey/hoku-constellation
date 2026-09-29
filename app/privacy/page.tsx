@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   description: 'How HOKU Insider collects, uses, and protects your information.',
 }
 
-const UPDATED = 'September 28, 2026'
+const UPDATED = 'September 29, 2026 (draft pending legal review)'
 
 export default function PrivacyPage() {
   return (
@@ -29,6 +29,10 @@ export default function PrivacyPage() {
             <li><strong>Subscription information.</strong> Payments are processed by Stripe. We store your Stripe customer and subscription identifiers, your plan, and your subscription status. We never see or store full card numbers.</li>
             <li><strong>Usage information.</strong> Pages you visit, features you use, and technical details such as browser type and approximate location derived from your IP address. See “Analytics” below.</li>
             <li><strong>Watch lists.</strong> If you choose to follow people or organizations for alerts, we store those selections with your account.</li>
+            <li><strong>Team workspace content.</strong> For HOKU Insider Pro and Organization teams we store what your team creates: team membership and roles, invitations (the invitee’s email address), clients and their report recipients, watchlists, alert rules, private notes, client reports, and uploaded logos. This content is visible only to members of your team and to HOKU Insider staff who support the service. Notes and reports stay with the team when a member leaves.</li>
+            <li><strong>Alert delivery records.</strong> When we send you an alert or digest we record whether it was delivered and whether it was opened (through a single tracking pixel), so we can measure delivery speed and reliability.</li>
+            <li><strong>Questions you ask.</strong> Ask HOKU Insider sends the text of your question to our AI provider to produce an answer. We keep only the length of each question and the number of records found. We do not store the question text.</li>
+            <li><strong>Slack connection.</strong> If your team connects Slack, we store the incoming-webhook address encrypted and use it only to post your team’s alerts.</li>
           </ul>
 
           <h2>What we do not collect</h2>
@@ -46,8 +50,11 @@ export default function PrivacyPage() {
             <li>We use <strong>session replay</strong> to see how pages are used. All form inputs are masked, and any element marked as sensitive (such as your email on the account page) is masked or blocked. Replay is disabled on account, admin, and sign-in pages.</li>
             <li>We honor the browser <strong>Do Not Track</strong> setting. If DNT is enabled, no analytics events or session recordings are captured.</li>
           </ul>
+          <ul>
+            <li>For workspace features we record counts only: for example, that a report was generated with a given number of citations, that a question returned a given number of results, or that feedback of a given length was sent. We never send report text, question text, client names, or notes to PostHog.</li>
+          </ul>
           <p>
-            We also use Vercel Speed Insights, which collects anonymous performance measurements and no personal information.
+            We also use Vercel Speed Insights, which collects anonymous performance measurements and no personal information, and <strong>Sentry</strong> to record application errors (stack traces and the page where the error happened; we configure it not to send form contents).
           </p>
 
           <h2>Cookies and local storage</h2>
@@ -62,7 +69,20 @@ export default function PrivacyPage() {
 
           <h2>Sharing</h2>
           <p>
-            We share information only with the service providers needed to run HOKU Insider (Neon for the database and authentication, Stripe for payments, PostHog for analytics, Vercel for hosting), each bound by their own privacy commitments, or when required by law.
+            We share information only with the service providers needed to run HOKU Insider, each bound by their own privacy commitments, or when required by law:
+          </p>
+          <ul>
+            <li>Neon: database and authentication</li>
+            <li>Stripe: payments and invoices</li>
+            <li>PostHog: product analytics</li>
+            <li>Vercel: hosting</li>
+            <li>Resend: email delivery of alerts, digests, invitations, and the client reports your team chooses to send</li>
+            <li>Anthropic: generation of cited summaries and answers from public records. Anthropic’s commercial terms do not permit it to train on this data.</li>
+            <li>Sentry: error monitoring</li>
+            <li>Slack: only if your team connects it</li>
+          </ul>
+          <p>
+            Client reports are emailed only to the recipients your team enters, and only after someone on your team approves the report.
           </p>
 
           <h2>Retention and deletion</h2>

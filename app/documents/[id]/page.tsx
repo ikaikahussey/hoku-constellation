@@ -9,6 +9,7 @@ import { getCurrentUser } from '@/lib/auth'
 import { formatDate, formatCurrency } from '@/lib/format'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
+import { EntityTools } from '@/components/workspace/EntityTools'
 import { PaywallGate } from '@/components/layout/PaywallGate'
 import { Badge } from '@/components/ui/Badge'
 import { entityHref } from '@/components/search/EntityCard'
@@ -115,6 +116,7 @@ export default async function DocumentPage({ params }: Props) {
             </details>
           </section>
         </PaywallGate>
+        <EntityTools documentId={doc.id} name={doc.title ?? 'this document'} path={`/documents/${doc.id}`} />
       </main>
       <Footer />
     </>

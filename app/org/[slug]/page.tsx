@@ -6,6 +6,7 @@ import type { EdgeTotals, EdgeWithEnds } from '@/lib/db/queries/edges'
 import { getCurrentUser } from '@/lib/auth'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
+import { EntityTools } from '@/components/workspace/EntityTools'
 import { OrgHeader } from '@/components/profile/OrgHeader'
 import { BioSection } from '@/components/profile/BioSection'
 import { RelationshipList } from '@/components/profile/RelationshipList'
@@ -99,6 +100,7 @@ export default async function OrgProfilePage({ params }: Props) {
             <GraphWrapper centerId={org.id} centerName={org.name} centerKind="org" centerSlug={slug} edges={graphEdges} />
           }
         />
+        <EntityTools entityId={org.id} kind="org" name={org.name} path={`/org/${slug}`} />
       </main>
       <Footer />
     </>
