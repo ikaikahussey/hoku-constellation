@@ -34,6 +34,11 @@ export interface SourceDefinition {
   notes?: string
   /** Env var names that must be set for the importer. */
   secrets?: string[]
+  /**
+   * Snapshot sources: when the cadence comes due after a completed run, start again at offset 0 so the whole
+   * source is re-read. Without it a completed cursor resumes at the end and the refresh reads nothing.
+   */
+  restartOnComplete?: boolean
 }
 
 export const SOURCE_REGISTRY: SourceDefinition[] = [
@@ -157,31 +162,31 @@ export const SOURCE_REGISTRY: SourceDefinition[] = [
   {
     key: 'irs_eo', name: 'IRS — Exempt Organizations Business Master File (Hawaiʻi)', agency: 'Internal Revenue Service',
     jurisdiction: 'federal', accessMethod: 'bulk_download', baseUrl: 'https://www.irs.gov/pub/irs-soi/eo_hi.csv',
-    docTypes: ['entity_registration'], edgeTypes: [], entityKinds: ['org'], cadence: 'monthly', tier: 1, status: 'live',
+    docTypes: ['entity_registration'], edgeTypes: [], entityKinds: ['org'], cadence: 'monthly', tier: 1, status: 'live', restartOnComplete: true,
     notes: 'Every tax-exempt organization with a Hawaiʻi address (≈9,700): EIN, legal name, address, 501(c) subsection, ruling date, NTEE, assets/income. Public domain; refreshed monthly by the IRS.',
   },
   {
     key: 'gleif', name: 'GLEIF — Legal Entity Identifiers for Hawaiʻi-formed entities', agency: 'Global Legal Entity Identifier Foundation',
     jurisdiction: 'state', accessMethod: 'api', baseUrl: 'https://api.gleif.org/api/v1/lei-records?filter%5Bentity.jurisdiction%5D=US-HI',
-    docTypes: ['entity_registration'], edgeTypes: ['owns'], entityKinds: ['org'], cadence: 'monthly', tier: 2, status: 'live',
+    docTypes: ['entity_registration'], edgeTypes: ['owns'], entityKinds: ['org'], cadence: 'monthly', tier: 2, status: 'live', restartOnComplete: true,
     notes: 'CC0. ≈430 entities formed under Hawaiʻi law; records registered at RA000605 carry the DCCA BREG file number (registeredAs), the only open source of it. Level 2 direct parents become owns edges.',
   },
   {
     key: 'propublica_990', name: 'ProPublica Nonprofit Explorer', agency: 'ProPublica',
     jurisdiction: 'federal', accessMethod: 'api', baseUrl: 'https://projects.propublica.org',
-    docTypes: ['irs_990'], edgeTypes: ['officer_of', 'director_of'], entityKinds: ['org', 'person'], cadence: 'monthly', tier: 1, status: 'live',
+    docTypes: ['irs_990'], edgeTypes: ['officer_of', 'director_of'], entityKinds: ['org', 'person'], cadence: 'monthly', tier: 1, status: 'live', restartOnComplete: true,
   },
   {
     key: 'sec_edgar', name: 'SEC EDGAR — submissions & DEF 14A officers/directors', agency: 'U.S. Securities and Exchange Commission',
     jurisdiction: 'federal', accessMethod: 'api', baseUrl: 'https://data.sec.gov', urls: ['https://efts.sec.gov'],
-    docTypes: ['sec_filing'], edgeTypes: ['officer_of', 'director_of'], entityKinds: ['org', 'person'], cadence: 'weekly', tier: 1, status: 'live',
+    docTypes: ['sec_filing'], edgeTypes: ['officer_of', 'director_of'], entityKinds: ['org', 'person'], cadence: 'weekly', tier: 1, status: 'live', restartOnComplete: true,
     notes: 'Requires descriptive User-Agent; ≤ 10 req/s.',
   },
   {
-    key: 'sec_hi_companies', name: 'SEC EDGAR — every filer with a Hawaiʻi business address', agency: 'U.S. Securities and Exchange Commission',
-    jurisdiction: 'federal', accessMethod: 'api', baseUrl: 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&State=HI&output=atom', urls: ['https://data.sec.gov'],
-    docTypes: ['entity_registration'], edgeTypes: [], entityKinds: ['org'], cadence: 'monthly', tier: 1, status: 'live',
-    notes: '≈780 filers, mostly private companies filing Form D. Name, EIN, state of incorporation, SIC and former names from data.sec.gov submissions. Insider-only filers (individuals) skipped. Descriptive User-Agent; ≤ 10 req/s.',
+    key: 'sec_form_d', name: 'SEC Form D data sets — private offerings by Hawaiʻi issuers', agency: 'U.S. Securities and Exchange Commission',
+    jurisdiction: 'federal', accessMethod: 'bulk_download', baseUrl: 'https://www.sec.gov/data-research/sec-markets-data/form-d-data-sets',
+    docTypes: ['sec_filing'], edgeTypes: ['officer_of', 'director_of'], entityKinds: ['org', 'person'], cadence: 'monthly', tier: 1, status: 'live',
+    notes: 'Quarterly ZIPs since 2008 (ISSUERS, OFFERING, RELATEDPERSONS). Primary issuer in HI → sec_filing document, issuer org by CIK, executive officers and directors as edges. Cursor counts quarters. EDGAR /cgi-bin company browse is robots-disallowed and not used.',
   },
   // ============================================================ Tier 1 — Counties
   {

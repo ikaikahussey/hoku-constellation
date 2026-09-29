@@ -79,7 +79,7 @@ CAPTCHA, paid, or terms forbid automated access), **manual** (UIPA request; CSV 
 | `irs_eo` | IRS — Exempt Organizations Business Master File (Hawaiʻi) | Internal Revenue Service (federal) | bulk_download — https://www.irs.gov/pub/irs-soi/eo_hi.csv | monthly | **live** | entity_registration → (none) | ≈9,700 Hawaiʻi exempt orgs; resolves by EIN. |
 | `propublica_990` | ProPublica Nonprofit Explorer | ProPublica (federal) | api — https://projects.propublica.org | monthly | **live** | irs_990 → officer_of, director_of |  |
 | `sec_edgar` | SEC EDGAR — submissions & DEF 14A officers/directors | U.S. Securities and Exchange Commission (federal) | api — https://data.sec.gov | weekly | **live** | sec_filing → officer_of, director_of | Requires descriptive User-Agent; ≤ 10 req/s. |
-| `sec_hi_companies` | SEC EDGAR — every filer with a Hawaiʻi business address | U.S. Securities and Exchange Commission (federal) | api — https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&State=HI&output=atom | monthly | **live** | entity_registration → (none) | ≈780 filers, mostly Form D; insider-only filers skipped. |
+| `sec_form_d` | SEC Form D data sets — private offerings by Hawaiʻi issuers | U.S. Securities and Exchange Commission (federal) | bulk_download — https://www.sec.gov/data-research/sec-markets-data/form-d-data-sets | monthly | **live** | sec_filing → officer_of, director_of | Quarterly ZIPs since 2008; cursor counts quarters. EDGAR /cgi-bin browse is robots-disallowed. |
 | `hnl_permits` | Honolulu — building permits | City & County of Honolulu DPP (honolulu) | socrata — https://data.honolulu.gov | weekly | **planned** | permit → owns |  Secrets: SOCRATA_APP_TOKEN. |
 | `hnl_council` | Honolulu City Council — legislation & votes | Honolulu City Council (honolulu) | html — https://hnldoc.ehawaii.gov | weekly | **planned** | measure, vote → sponsored, voted_on |  |
 | `hnl_ethics` | Honolulu Ethics Commission — lobbyists & disclosures | Honolulu Ethics Commission (honolulu) | html — https://www.honolulu.gov/ethics | monthly | **planned** | lobbyist_registration, financial_disclosure → lobbied_for, disclosed_interest |  |
@@ -147,10 +147,14 @@ CAPTCHA, paid, or terms forbid automated access), **manual** (UIPA request; CSV 
 9. Next: `capitol_votes`, `capitol_committees`, `ethics_disclosures` (PDF), `elections`,
    `sunshine_calendar`, `lda`, `hnl_council`, `maui_council`, `hawaii_council` (Legistar client
    exists), `hnl_permits` (Socrata client exists).
-10. Hawaiʻi corporations: `irs_eo`, `gleif`, `sec_hi_companies` live; `dcca_breg` loader ready for a
-    registry export (docs/HAWAII_CORPORATIONS.md). Next: Form D related persons. **Done.**
+10. Hawaiʻi corporations: `irs_eo`, `gleif`, `sec_form_d` live; `dcca_breg` loader ready for a
+    registry export (docs/HAWAII_CORPORATIONS.md). **Done.**
 
 ## 5. Scheduling
+
+Snapshot sources (`restartOnComplete: true` in the registry: `irs_eo`, `gleif`, `propublica_990`,
+`sec_edgar`) start again at offset 0 when their cadence comes due after a completed run; append-style
+sources resume at their cursor.
 
 **Default: Vercel Cron.** `vercel.json` calls `/api/cron/ingest` every 15 minutes (Bearer
 `CRON_SECRET`). `lib/import/schedule.ts` selects the live sources that are due (never run, unfinished,
