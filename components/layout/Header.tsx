@@ -8,6 +8,7 @@ import { buttonClass } from '@/components/ui/Button'
 const navLinks = [
   { href: '/search', label: 'Search' },
   { href: '/explore', label: 'Explore' },
+  { href: '/documents', label: 'Documents' },
   { href: '/pricing', label: 'Pricing' },
 ]
 
