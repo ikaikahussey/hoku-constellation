@@ -2,7 +2,7 @@ import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getServiceDb } from '@/lib/db/service'
 import { listDocuments, documentFacets } from '@/lib/db/queries'
-import { PAID_DOC_TYPES } from '@/lib/db/gating'
+import { PAID_DOC_TYPES, DOCUMENT_BROWSER_GATED } from '@/lib/db/gating'
 import { getCurrentUser } from '@/lib/auth'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
@@ -42,7 +42,7 @@ function parseDocumentQuery(sp: RawParams): DocumentQuery {
 export default async function DocumentsPage({ searchParams }: { searchParams: Promise<RawParams> }) {
   const query = parseDocumentQuery(await searchParams)
   const [db, user] = await Promise.all([getServiceDb(), getCurrentUser()])
-  const hasAccess = !!user?.canAccessGated
+  const hasAccess = !DOCUMENT_BROWSER_GATED || !!user?.canAccessGated
   const excludeDocTypes = hasAccess ? [] : [...PAID_DOC_TYPES]
 
   const opts = {

@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 import { getServiceDb } from '@/lib/db/service'
 import { getDocument, getEdgesForDocument } from '@/lib/db/queries'
 import type { EdgeWithEnds } from '@/lib/db/queries/edges'
-import { PAID_DOC_TYPES } from '@/lib/db/gating'
+import { PAID_DOC_TYPES, DOCUMENT_BROWSER_GATED } from '@/lib/db/gating'
 import { getCurrentUser } from '@/lib/auth'
 import { formatDate, formatCurrency } from '@/lib/format'
 import { Header } from '@/components/layout/Header'
@@ -66,7 +66,7 @@ export default async function DocumentPage({ params }: Props) {
   if (!doc) notFound()
 
   const [db, user] = await Promise.all([getServiceDb(), getCurrentUser()])
-  const gated = PAID_DOC_TYPES.has(doc.doc_type)
+  const gated = DOCUMENT_BROWSER_GATED && PAID_DOC_TYPES.has(doc.doc_type)
   const hasAccess = !gated || !!user?.canAccessGated
   const edges = hasAccess ? await getEdgesForDocument(db, doc.id) : []
   const body = doc.body_text?.trim() ?? ''

@@ -18,6 +18,13 @@ export const PAID_EDGE_TYPES = new Set([
   'disclosed_interest', 'testified_on', 'awarded_contract', 'awarded_grant', 'owns', 'leases',
 ])
 
+/**
+ * Whether /documents and /documents/[id] hide PAID_DOC_TYPES from visitors without a subscription.
+ * Off for now: every document, including disclosures, is public in the browser. Entity pages, the API,
+ * and the database RLS policies keep their gating regardless of this flag.
+ */
+export const DOCUMENT_BROWSER_GATED = false
+
 export type Gate = Pick<UserAccountRow, 'subscription_tier' | 'subscription_status' | 'is_staff'> | null | undefined
 
 export function isPaid(account: Gate): boolean {
