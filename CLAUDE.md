@@ -62,8 +62,9 @@ property, and ethics types; staff sees everything including `review`/`unmatched`
   Reads core tables, writes `ax_*`. Never imports from `lib/import/`.
 - `lib/import/` — ingestion: `http.ts` (polite client), `clients/`, `pipeline.ts`
   (`upsertDocument` → `resolveRef` → `insertEdge`, `processRecord`), `run.ts` (`runImporter`,
-  `--dry`), `source-registry.ts`, `sources/<source>.ts` exporting `SOURCE_KEY` + `importBatch(db, offset, batchSize, opts)`.
-  Never imports from `lib/analytics/`.
+  `--dry`), `source-registry.ts`, `sources/<source>.ts` exporting `SOURCE_KEY` + `importBatch(db, offset, batchSize, opts)`,
+  `priority.ts` (targeted csc/fec pass for staff-flagged `attributes.is_priority` entities, run daily ahead of the sweeps;
+  flag with `scripts/db/prioritize.ts`, see `docs/OPERATIONS.md`). Never imports from `lib/analytics/`.
 - `scripts/import/<source>.ts` CLI wrappers; `workers/import-<source>.ts` + `workers/launchd/*.plist`
   for the Mac mini; `scripts/db/` port, reconcile, user migration, parity tools.
 - `app/api/analytics/**` (subscriber routes), `app/api/v1/**` (API tier), `app/api/admin/**`

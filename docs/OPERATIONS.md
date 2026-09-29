@@ -27,6 +27,33 @@ This runbook covers the Part E services: alerts, reports, briefings, Q&A, billin
 
 Run either the Mac mini workers or the Vercel crons for alerts and ops, not both. Both paths are idempotent, but running both can send the weekly draft notice twice.
 
+### Priority entities
+
+Staff can flag a person or organization as **priority** (`entity.attributes.is_priority`: the Priority checkbox on the admin edit form, or `scripts/db/prioritize.ts`). Three things change for flagged entities:
+
+- **Records are collected first.** `lib/import/priority.ts` asks the name-searchable sources for each flagged entity's names and aliases before the regular sweeps. The sources are Campaign Spending Commission full-text search and OpenFEC Schedule A by contributor name, which covers all committees, not only Hawaiʻi ones. It runs:
+  - once a day at the start of `/api/cron/ingest`, with up to 60 s of its budget,
+  - or from `workers/import-priority.ts`, launchd daily at 19:00 ahead of `import-csc`/`import-fec`,
+  - or by hand: `npx tsx --tsconfig tsconfig.scripts.json scripts/import/priority.ts [--dry] [--fec-state=all]`.
+  
+  It keeps only rows naming the entity by first and last name; middle initials are ignored and nicknames are not guessed, so add them as aliases. Records are written with the same keys as the sweeps, so the pass is idempotent. Linking to the entity still goes through normal matching.
+- **Match review lists them first.** `/admin/match-review` puts edges linked to, or with an unresolved name similar to, a priority entity above everything else and marks them "Priority". The "Priority only" filter narrows the list to those edges. Add filing spellings (for example "Last, First M") as aliases so these edges match automatically.
+- **Teams can watch them.** `scripts/db/prioritize.ts --watch-email=<member email>` adds the entities to a "Priority" watchlist in that member's working team, at priority 1, with an immediate email alert rule. The plan must include alerts; otherwise the script reports it and adds the items without a rule.
+
+Flag, feature, and watch in one step (`--dry` first):
+
+```
+npx tsx --tsconfig tsconfig.scripts.json scripts/db/prioritize.ts \
+  --person="Andy Winer|Andrew Winer" \
+  --person="Paul Yonamine|Paul K. Yonamine|Paul Kaname Yonamine" \
+  --feature --watch-email=<your team email> --import --dry
+```
+
+Rules:
+- A name that matches several profiles is listed and skipped; rerun that one with `--id=<uuid>`.
+- A name with no profile is created only with `--create`.
+- `--clear` removes the priority flag and leaves featured and watchlists as they are.
+
 ### Alert latency
 
 The target is commit to email under 60 seconds at p95. Three things keep it there:

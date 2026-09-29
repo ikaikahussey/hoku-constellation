@@ -13,7 +13,7 @@ import { buttonClass } from '@/components/ui/Button'
 
 export const dynamic = 'force-dynamic'
 
-const PERSON_ORDER = ['slug', 'first_name', 'last_name', 'office_held', 'party', 'district', 'island', 'term_start', 'term_end', 'status', 'visibility', 'is_featured', 'website_url', 'photo_url']
+const PERSON_ORDER = ['slug', 'first_name', 'last_name', 'office_held', 'party', 'district', 'island', 'term_start', 'term_end', 'status', 'visibility', 'is_featured', 'is_priority', 'website_url', 'photo_url']
 
 export default async function AdminPersonDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params

@@ -62,6 +62,8 @@ const baseEntityAttributes = z.object({
   visibility: z.enum(['public', 'gated']).optional(),
   status: z.string().optional(),
   is_featured: z.boolean().optional(),
+  /** Staff priority: records are collected first (lib/import/priority.ts) and sorted first in match review. */
+  is_priority: z.boolean().optional(),
   description: z.string().optional(),
   website_url: z.string().optional(),
   island: z.string().optional(),

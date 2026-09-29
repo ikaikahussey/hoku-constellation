@@ -13,8 +13,9 @@ import { toIsoDate, toAmount, cleanName, canonicalPersonName } from '../normaliz
 import type { ImportOptions, SourcePage } from '../types'
 
 export const SOURCE_KEY = 'fec'
-const BASE = 'https://api.open.fec.gov/v1'
-const key = () => process.env.FEC_API_KEY || 'DEMO_KEY'
+export const FEC_BASE = 'https://api.open.fec.gov/v1'
+const BASE = FEC_BASE
+export const fecKey = () => process.env.FEC_API_KEY || 'DEMO_KEY'
 
 export interface FecCommittee { committee_id: string; name: string; designation: string | null; committee_type: string | null; candidate_ids?: string[]; party?: string | null }
 
@@ -45,7 +46,7 @@ export interface ScheduleA {
 export async function listHawaiiCommittees(): Promise<FecCommittee[]> {
   const out: FecCommittee[] = []
   for (let page = 1; page <= 20; page++) {
-    const json = await fetchJson<{ results: FecCommittee[]; pagination: { pages: number } }>(`${BASE}/committees/?state=HI&per_page=100&page=${page}&api_key=${key()}`)
+    const json = await fetchJson<{ results: FecCommittee[]; pagination: { pages: number } }>(`${BASE}/committees/?state=HI&per_page=100&page=${page}&api_key=${fecKey()}`)
     out.push(...json.results)
     if (page >= (json.pagination?.pages ?? 1)) break
   }
@@ -82,6 +83,32 @@ export function parseScheduleA(r: ScheduleA): FecParsed | null {
   }
 }
 
+/**
+ * Write one Schedule A receipt. Shared by the committee sweep and the priority-entity pass
+ * (lib/import/priority.ts); both key documents as `schedule_a:<sub_id>`.
+ */
+export async function processScheduleA(db: Db, p: FecParsed, raw: ScheduleA, result: BatchResult, log: (m: string) => void = () => {}): Promise<void> {
+  try {
+    await processRecord(db, {
+      document: {
+        source: SOURCE_KEY, source_record_id: `schedule_a:${p.recordId}`, doc_type: 'contribution',
+        title: `${p.donor} → ${p.committeeName}`, doc_date: p.date, url: (p.attributes.pdf_url as string) ?? null, raw: raw as unknown as Record<string, unknown>,
+      },
+      edges: async ({ db: d, created }) => {
+        const from = p.donorIsOrg
+          ? await resolveRef(d, { kind: 'org', rawName: p.donor, identifiers: p.donorFecId ? { fec_id: p.donorFecId } : undefined, attributes: { org_type: 'pac' } })
+          : await resolveRef(d, { kind: 'person', rawName: p.donor, canonicalName: canonicalPersonName(p.donor) })
+        // Recipient committee: authoritative FEC entity → create with fec_id.
+        const to = await resolveRef(d, { kind: 'org', rawName: p.committeeName, identifiers: { fec_id: p.committeeId }, attributes: { org_type: 'pac', candidate_ids: p.candidateIds } })
+        if (from.created) created()
+        if (to.created) created()
+        const edges: EdgeInput[] = [{ type: 'contributed_to', from, to, role: (p.attributes.contribution_type as string) ?? null, amount: p.amount, start_date: p.date, attributes: p.attributes }]
+        return edges
+      },
+    }, result)
+  } catch (e) { result.errors++; log(`sub_id ${p.recordId}: ${(e as Error).message}`) }
+}
+
 interface FecPageState { committeeIndex?: number; last_index?: string | null; last_date?: string | null; committees?: string[] }
 
 export async function importBatch(db: Db, offset: number, batchSize: number, opts: ImportOptions = {}): Promise<BatchResult> {
@@ -104,7 +131,7 @@ export async function importBatch(db: Db, offset: number, batchSize: number, opt
     }
     const committeeId = state.committees[state.committeeIndex ?? 0]
     if (!committeeId) return { ...result, done: true }
-    let url = `${BASE}/schedules/schedule_a/?committee_id=${committeeId}&sort=-contribution_receipt_date&per_page=${Math.min(100, batchSize)}&min_date=${minDate}&api_key=${key()}`
+    let url = `${BASE}/schedules/schedule_a/?committee_id=${committeeId}&sort=-contribution_receipt_date&per_page=${Math.min(100, batchSize)}&min_date=${minDate}&api_key=${fecKey()}`
     if (state.last_index && state.last_date) url += `&last_index=${state.last_index}&last_contribution_receipt_date=${state.last_date}`
     const json = await fetchJson<{ results: ScheduleA[]; pagination: { count: number; last_indexes?: { last_index?: string; last_contribution_receipt_date?: string } | null } }>(url)
     const li = json.pagination?.last_indexes
@@ -116,25 +143,7 @@ export async function importBatch(db: Db, offset: number, batchSize: number, opt
   for (const raw of page.records) {
     const p = parseScheduleA(raw)
     if (!p) { result.seen++; continue }
-    try {
-      await processRecord(db, {
-        document: {
-          source: SOURCE_KEY, source_record_id: `schedule_a:${p.recordId}`, doc_type: 'contribution',
-          title: `${p.donor} → ${p.committeeName}`, doc_date: p.date, url: (p.attributes.pdf_url as string) ?? null, raw: raw as unknown as Record<string, unknown>,
-        },
-        edges: async ({ db: d, created }) => {
-          const from = p.donorIsOrg
-            ? await resolveRef(d, { kind: 'org', rawName: p.donor, identifiers: p.donorFecId ? { fec_id: p.donorFecId } : undefined, attributes: { org_type: 'pac' } })
-            : await resolveRef(d, { kind: 'person', rawName: p.donor, canonicalName: canonicalPersonName(p.donor) })
-          // Recipient committee: authoritative FEC entity → create with fec_id.
-          const to = await resolveRef(d, { kind: 'org', rawName: p.committeeName, identifiers: { fec_id: p.committeeId }, attributes: { org_type: 'pac', candidate_ids: p.candidateIds } })
-          if (from.created) created()
-          if (to.created) created()
-          const edges: EdgeInput[] = [{ type: 'contributed_to', from, to, role: (p.attributes.contribution_type as string) ?? null, amount: p.amount, start_date: p.date, attributes: p.attributes }]
-          return edges
-        },
-      }, result)
-    } catch (e) { result.errors++; log(`sub_id ${p.recordId}: ${(e as Error).message}`) }
+    await processScheduleA(db, p, raw, result, log)
   }
 
   result.nextOffset = offset + page.records.length

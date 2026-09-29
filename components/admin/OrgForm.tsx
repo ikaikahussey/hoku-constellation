@@ -40,6 +40,7 @@ export function OrgForm({ org }: { org?: EntityRow }) {
     website_url: s(a.website_url),
     status: s(a.status) || 'active',
     is_featured: a.is_featured === true,
+    is_priority: a.is_priority === true,
     visibility: s(a.visibility) || 'gated',
     ein: s(ids.ein),
     dcca: s(ids.dcca),
@@ -60,7 +61,7 @@ export function OrgForm({ org }: { org?: EntityRow }) {
     setError('')
     const fd = new FormData()
     for (const [k, v] of Object.entries(form)) {
-      if (k === 'is_featured') { if (v) fd.set('is_featured', 'on'); continue }
+      if (k === 'is_featured' || k === 'is_priority') { if (v) fd.set(k, 'on'); continue }
       fd.set(k, String(v))
     }
     start(async () => {
@@ -109,10 +110,14 @@ export function OrgForm({ org }: { org?: EntityRow }) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Select label="Status" value={form.status} onChange={e => set('status', e.target.value)} options={opts(STATUSES)} />
           <Select label="Visibility" value={form.visibility} onChange={e => set('visibility', e.target.value)} options={opts(['public', 'gated'])} />
-          <div className="flex items-end">
+          <div className="flex items-end gap-6">
             <label className="flex items-center gap-2 cursor-pointer text-sm">
               <input type="checkbox" checked={form.is_featured} onChange={e => set('is_featured', e.target.checked)} className="h-4 w-4 border border-ink accent-ink" />
               Featured
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer text-sm" title="Collect this entity's records first and sort its names first in match review">
+              <input type="checkbox" checked={form.is_priority} onChange={e => set('is_priority', e.target.checked)} className="h-4 w-4 border border-ink accent-ink" />
+              Priority
             </label>
           </div>
         </div>

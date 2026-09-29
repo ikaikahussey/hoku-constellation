@@ -120,9 +120,11 @@ export function planEdges(kind: CscKind, p: CscParsed, from: ResolvedRef, to: Re
   return [{ type: EDGE_FOR[kind], from, to, role: p.role, amount: p.amount, start_date: p.date, attributes: p.attributes }]
 }
 
-interface CscState { resources?: Array<{ id: string; kind: CscKind; name: string }>; resourceIndex?: number }
+interface CscState { resources?: CscResource[]; resourceIndex?: number }
 
-async function discoverResources(ckan: CkanClient, log: (m: string) => void): Promise<Array<{ id: string; kind: CscKind; name: string }>> {
+export interface CscResource { id: string; kind: CscKind; name: string }
+
+export async function discoverResources(ckan: CkanClient, log: (m: string) => void): Promise<CscResource[]> {
   const ids = new Set(KNOWN_RESOURCES)
   const names = new Map<string, string>()
   for (const q of ['campaign spending commission', 'campaign contributions received', 'expenditures made candidates', 'loans received candidates', 'noncandidate committee']) {
@@ -133,7 +135,7 @@ async function discoverResources(ckan: CkanClient, log: (m: string) => void): Pr
       }
     } catch (e) { log(`package_search "${q}" failed: ${(e as Error).message}`) }
   }
-  const out: Array<{ id: string; kind: CscKind; name: string }> = []
+  const out: CscResource[] = []
   for (const id of ids) {
     try {
       const page = await ckan.datastoreSearch(id, { limit: 1 })
@@ -143,6 +145,34 @@ async function discoverResources(ckan: CkanClient, log: (m: string) => void): Pr
     } catch (e) { log(`resource ${id} unreadable: ${(e as Error).message}`) }
   }
   return out
+}
+
+/**
+ * Write one parsed CSC record: document, then entities, then edges. Shared by the sweep above and the
+ * priority-entity pass (lib/import/priority.ts), so both produce identical source_record_ids.
+ */
+export async function processCscRecord(db: Db, kind: CscKind, resourceId: string | null, parsed: CscParsed, raw: Record<string, unknown>, result: BatchResult, log: (m: string) => void = () => {}): Promise<void> {
+  try {
+    await processRecord(db, {
+      document: {
+        source: SOURCE_KEY, source_record_id: `${resourceId ?? kind}:${parsed.recordId}`, doc_type: DOC_FOR[kind],
+        title: `${parsed.fromName} → ${parsed.toName}`, doc_date: parsed.date, raw,
+        url: resourceId ? `${HAWAII_OPEN_DATA}/dataset/${resourceId}` : null,
+      },
+      edges: async ({ db: d, created }) => {
+        const fromIsCandidate = kind !== 'contribution' && !parsed.fromIsOrg
+        const toIsCandidate = kind !== 'expenditure' && !parsed.toIsOrg
+        const from = await refFor(d, parsed.fromName, parsed.fromIsOrg, { candidate: fromIsCandidate, regNo: kind !== 'contribution' ? parsed.regNo : null })
+        const to = await refFor(d, parsed.toName, parsed.toIsOrg, { candidate: toIsCandidate, regNo: kind !== 'expenditure' ? parsed.regNo : null })
+        if (from.created) created()
+        if (to.created) created()
+        return planEdges(kind, parsed, from, to)
+      },
+    }, result)
+  } catch (e) {
+    result.errors++
+    log(`record ${parsed.recordId}: ${(e as Error).message}`)
+  }
 }
 
 /**
@@ -185,27 +215,7 @@ export async function importBatch(db: Db, offset: number, batchSize: number, opt
   for (const raw of page.records) {
     const parsed = parseCscRecord(kind, raw)
     if (!parsed) { result.seen++; continue }
-    try {
-      await processRecord(db, {
-        document: {
-          source: SOURCE_KEY, source_record_id: `${params.resource ?? kind}:${parsed.recordId}`, doc_type: DOC_FOR[kind],
-          title: `${parsed.fromName} → ${parsed.toName}`, doc_date: parsed.date, raw,
-          url: params.resource ? `${HAWAII_OPEN_DATA}/dataset/${params.resource}` : null,
-        },
-        edges: async ({ db: d, created }) => {
-          const fromIsCandidate = kind !== 'contribution' && !parsed.fromIsOrg
-          const toIsCandidate = kind !== 'expenditure' && !parsed.toIsOrg
-          const from = await refFor(d, parsed.fromName, parsed.fromIsOrg, { candidate: fromIsCandidate, regNo: kind !== 'contribution' ? parsed.regNo : null })
-          const to = await refFor(d, parsed.toName, parsed.toIsOrg, { candidate: toIsCandidate, regNo: kind !== 'expenditure' ? parsed.regNo : null })
-          if (from.created) created()
-          if (to.created) created()
-          return planEdges(kind, parsed, from, to)
-        },
-      }, result)
-    } catch (e) {
-      result.errors++
-      log(`record ${parsed.recordId}: ${(e as Error).message}`)
-    }
+    await processCscRecord(db, kind, params.resource ?? null, parsed, raw, result, log)
   }
   result.nextOffset = offset + page.records.length
   const total = page.total

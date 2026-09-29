@@ -5,6 +5,9 @@
  * a time budget, saving the cursor after every batch so the next tick resumes where this one stopped.
  * Scheduled every 15 minutes in vercel.json; a full backfill of a large source therefore proceeds as a
  * chain of ticks, and finished sources are refreshed on their registry cadence.
+ *
+ * Before the due sources, the priority-entity pass (lib/import/priority.ts) runs once a day with up to
+ * PRIORITY_BUDGET_S seconds, so staff-flagged people and organizations are collected first.
  */
 import { NextResponse, type NextRequest } from 'next/server'
 import { getServiceDb } from '@/lib/db/service'
@@ -13,12 +16,14 @@ import { runImporter } from '@/lib/import/run'
 import { loadImporter, LIVE_SOURCE_KEYS } from '@/lib/import/sources'
 import { selectDueSources } from '@/lib/import/schedule'
 import { runAlertPipeline } from '@/lib/alerts'
+import { runPriorityPassIfDue } from '@/lib/import/priority'
 
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
 const DEFAULT_BUDGET_S = 240
 const PER_SOURCE_MIN_S = 45
+const PRIORITY_BUDGET_S = 60
 
 async function handle(request: NextRequest) {
   const unauth = authenticateCron(request)
@@ -29,6 +34,18 @@ async function handle(request: NextRequest) {
   const deadline = started + budgetS * 1000
   const db = await getServiceDb()
   const only = sp.get('source')?.split(',').filter(Boolean)
+  let priority: Record<string, unknown> | null = null
+  if (!only) {
+    try {
+      const p = await runPriorityPassIfDue(db, { deadlineMs: Math.min(deadline, Date.now() + PRIORITY_BUDGET_S * 1000) })
+      if (p) {
+        priority = { targets: p.targets, documents: p.documents, edges: p.edges, errors: p.errors }
+        if (p.documents + p.edges > 0) await runAlertPipeline(db)
+      }
+    } catch (e) {
+      priority = { ok: false, error: (e as Error).message }
+    }
+  }
   const due = await selectDueSources(db, { keys: only, live: LIVE_SOURCE_KEYS })
   const results: Array<Record<string, unknown>> = []
   for (const def of due) {
@@ -49,7 +66,7 @@ async function handle(request: NextRequest) {
     }
     if (Date.now() >= deadline) break
   }
-  return NextResponse.json({ ok: true, due: due.map(d => d.key), ran: results, durationMs: Date.now() - started })
+  return NextResponse.json({ ok: true, priority, due: due.map(d => d.key), ran: results, durationMs: Date.now() - started })
 }
 
 export const GET = handle
