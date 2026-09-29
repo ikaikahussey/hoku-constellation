@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createTestDb, type TestDb } from './helpers/pglite'
 import { listDocuments, documentFacets } from '@/lib/db/queries/documents'
 import { PAID_DOC_TYPES } from '@/lib/db/gating'
+import { sourceLabel, sourceTitle, docTypeLabel } from '@/components/documents/labels'
 
 let db: TestDb
 const sha = (s: string) => s.padEnd(64, '0')
@@ -80,5 +81,18 @@ describe('documentFacets', () => {
     const f = await documentFacets(db, { q: 'energy', from: '2026-01-01' })
     expect(f.sources).toEqual([{ value: 'capitol_measures', n: 1 }])
     expect(f.docTypes).toEqual([{ value: 'measure', n: 1 }])
+  })
+})
+
+describe('document labels', () => {
+  it('names sources from the registry, including the keys the legacy port wrote', () => {
+    expect(sourceLabel('csc')).toBe('Campaign Spending Commission')
+    expect(sourceLabel('hawaii_csc')).toBe('Campaign Spending Commission')
+    expect(sourceLabel('hawaii_ethics')).toBe('State Ethics Commission')
+    expect(sourceLabel('hawaii_puc')).toBe('Public Utilities Commission')
+    expect(sourceLabel('legacy_timeline')).toBe('Editorial timeline')
+    expect(sourceLabel('unknown_key')).toBe('unknown key')
+    expect(sourceTitle('sec_edgar')).toContain('SEC EDGAR')
+    expect(docTypeLabel('lobbyist_registration')).toBe('lobbyist registration')
   })
 })
