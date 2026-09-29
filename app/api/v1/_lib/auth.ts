@@ -3,18 +3,18 @@ import { getCurrentUser } from '@/lib/auth'
 import { getServiceDb } from '@/lib/db/service'
 import type { Db } from '@/lib/db/types'
 
-/** REST API access requires a Professional or Institutional subscription (or staff). */
+/** REST API access requires the `api` entitlement (Organization plan, legacy Professional/Institutional, or staff). */
 export async function authenticateApiRequest(): Promise<{ error: NextResponse | null; userId: string | null; tier: string | null; db: Db }> {
   const db = await getServiceDb()
   const user = await getCurrentUser()
   if (!user) return { error: NextResponse.json({ error: 'Authentication required' }, { status: 401 }), userId: null, tier: null, db }
   if (!user.canAccessApi) {
     return {
-      error: NextResponse.json({ error: 'API access requires a Professional or Institutional subscription' }, { status: 403 }),
-      userId: user.id, tier: user.account.subscription_tier, db,
+      error: NextResponse.json({ error: 'API access requires the Organization plan' }, { status: 403 }),
+      userId: user.id, tier: user.entitlements.tier, db,
     }
   }
-  return { error: null, userId: user.id, tier: user.account.subscription_tier, db }
+  return { error: null, userId: user.id, tier: user.entitlements.tier, db }
 }
 
 export function paginationParams(searchParams: URLSearchParams) {

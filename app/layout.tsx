@@ -26,7 +26,7 @@ async function getIdentity(): Promise<AnalyticsIdentity | null> {
     if (!user) return null
     return {
       userId: user.id,
-      subscription_tier: user.account.subscription_tier,
+      subscription_tier: user.entitlements.tier,
       is_staff: user.account.is_staff,
       signup_date: user.account.created_at,
     }

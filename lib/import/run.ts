@@ -21,6 +21,8 @@ export interface RunOptions extends ImportOptions {
   deadlineMs?: number
   /** Start at 0 when the stored cursor says the previous run completed (snapshot sources). */
   restartIfComplete?: boolean
+  /** Called after each non-empty batch commits (records may have been inserted or updated in place). Workers pass the alert pipeline here. */
+  onBatchCommitted?: (batch: BatchResult) => Promise<void>
 }
 
 export async function runImporter(realDb: Db, source: string, importBatch: BatchImporter, opts: RunOptions = {}): Promise<RunSummary> {
@@ -46,6 +48,9 @@ export async function runImporter(realDb: Db, source: string, importBatch: Batch
       total.nextOffset = offset
       log(`batch ${total.batches}: seen=${r.seen} docs=${r.documents} edges=${r.edges} entities=${r.entitiesCreated} next=${offset} done=${r.done}`)
       if (!opts.dry) await setCursor(db, source, offset, r.done ? 'complete' : 'running', { last_batch: r })
+      if (!opts.dry && opts.onBatchCommitted && r.seen > 0) {
+        try { await opts.onBatchCommitted(r) } catch (e) { log(`post-batch hook failed: ${(e as Error).message}`) }
+      }
       if (r.done) { total.done = true; break }
       if (opts.maxBatches && total.batches >= opts.maxBatches) break
       if (opts.deadlineMs && Date.now() >= opts.deadlineMs) { log('time budget reached; cursor saved'); break }

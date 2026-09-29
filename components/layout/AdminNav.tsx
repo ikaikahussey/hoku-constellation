@@ -13,6 +13,9 @@ const navItems = [
   { href: '/admin/match-review', label: 'Match Review' },
   { href: '/admin/workers', label: 'Pipeline Status' },
   { href: '/admin/analytics', label: 'Analytics' },
+  { href: '/admin/alerts', label: 'Alerts' },
+  { href: '/admin/corrections', label: 'Corrections' },
+  { href: '/admin/partners', label: 'Design partners' },
   { href: '/admin/bulk-create', label: 'Bulk Create' },
 ]
 

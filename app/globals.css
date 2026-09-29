@@ -67,8 +67,13 @@ a:hover, a:focus-visible { color: var(--color-link-hover); }
 nav a, table a, .card a, .link-quiet { text-decoration: none; }
 nav a:hover, table a:hover, .card a:hover, .link-quiet:hover { text-decoration: underline; }
 
-/* Buttons never use red. */
+/* Buttons never use red. The unlayered link rules above outrank Tailwind utilities, so link-buttons
+   restate their text color explicitly: white on a black fill, black on white (including on hover). */
 .btn, button.btn { color: inherit; text-decoration: none; }
+a.btn.bg-ink, a.btn.bg-ink:visited { color: var(--color-paper); }
+a.btn.bg-ink:hover, a.btn.bg-ink:focus-visible { color: var(--color-ink); }
+a.btn.bg-paper, a.btn.bg-paper:visited { color: var(--color-ink); }
+a.btn.bg-paper.hover\:bg-ink:hover, a.btn.bg-paper.hover\:bg-ink:focus-visible { color: var(--color-paper); }
 
 *:focus-visible {
   outline: 2px solid var(--color-ink);

@@ -46,7 +46,10 @@ export function Header({ signedIn = false }: HeaderProps) {
 
           <div className="flex items-center gap-4">
             {signedIn ? (
-              <Link href="/account" className="text-sm link-quiet">Account</Link>
+              <>
+                <Link href="/workspace" className="text-sm link-quiet">Workspace</Link>
+                <Link href="/account" className="text-sm link-quiet">Account</Link>
+              </>
             ) : (
               <Link href="/auth/login" className="text-sm link-quiet">Log in</Link>
             )}

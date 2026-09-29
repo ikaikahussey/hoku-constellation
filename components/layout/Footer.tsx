@@ -41,6 +41,9 @@ export function Footer() {
             <ul className="space-y-2 text-sm">
               <li><a href="https://hoku.fm" target="_blank" rel="noopener noreferrer">Hoku.fm</a></li>
               <li><Link href="/pricing">Subscribe</Link></li>
+              <li><Link href="/coverage">Coverage</Link></li>
+              <li><Link href="/methodology">Methodology</Link></li>
+              <li><Link href="/accuracy">Accuracy</Link></li>
               <li><Link href="/privacy">Privacy</Link></li>
               <li><Link href="/terms">Terms</Link></li>
               <li><a href="mailto:constellation@hoku.fm">Contact</a></li>

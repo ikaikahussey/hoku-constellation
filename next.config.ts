@@ -5,6 +5,13 @@ const nextConfig: NextConfig = {
     serverActions: { bodySizeLimit: '10mb' },
   },
   serverExternalPackages: ['pg', 'posthog-node', 'unpdf'],
+  // lib/render/pdf.ts reads the embedded Arimo faces from disk; include them in every function that renders PDFs.
+  outputFileTracingIncludes: {
+    '/api/reports/**': ['./node_modules/@fontsource/arimo/files/arimo-latin*-{400,700}-*.woff'],
+    '/api/briefings/**': ['./node_modules/@fontsource/arimo/files/arimo-latin*-{400,700}-*.woff'],
+    '/api/cron/**': ['./node_modules/@fontsource/arimo/files/arimo-latin*-{400,700}-*.woff'],
+    '/workspace/**': ['./node_modules/@fontsource/arimo/files/arimo-latin*-{400,700}-*.woff'],
+  },
   async rewrites() {
     // PostHog reverse proxy so ad blockers do not drop events (US cloud).
     return [

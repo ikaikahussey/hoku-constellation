@@ -1,0 +1,13 @@
+{
+  "facts": [
+    { "documentId": "00000000-0000-4000-8000-000000000001", "text": "HB 123 passed Second Reading on 2027-02-20." },
+    { "documentId": "00000000-0000-4000-8000-000000000002", "text": "The Health committee scheduled a hearing on HB 123 for 2027-02-24." }
+  ],
+  "output": {
+    "insufficient": false,
+    "sentences": [
+      { "text": "HB 123 passed Second Reading on February 20.", "cites": ["D1"] },
+      { "text": "The bill has strong momentum and is likely to pass.", "cites": [] }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>fm.hoku.constellation.alerts</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__REPO_DIR__/workers/run.sh</string>
+        <string>alerts</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__REPO_DIR__</string>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>StandardOutPath</key>
+    <string>__REPO_DIR__/workers/logs/alerts.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__REPO_DIR__/workers/logs/alerts.err.log</string>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>

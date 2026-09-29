@@ -21,3 +21,8 @@ Next.js code and heed deprecation notices.
   robots.txt respected). Never work around a login, CAPTCHA, or terms of service.
 - Tests: `npm test` (Vitest on PGlite). Add a fixture test for every parser or importer you write.
 - Commit after each verified step; one commit per importer, message `ingest(<source-key>): <summary>`.
+- Workspace (`app` schema) writes go through `lib/teams`, `lib/alerts/rules`, `lib/reports`, etc. with role and
+  entitlement checks; RLS enforces the same rules. Access decisions use `app.entitlements()` /
+  `lib/entitlements.ts`, never `user_account.subscription_tier`.
+- Colors for email/PDF/DOCX come from `lib/brand-tokens.ts` (tested against `app/globals.css`).
+- Live Stripe objects are created only by the owner (`docs/PRICING.md`).

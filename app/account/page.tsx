@@ -18,7 +18,8 @@ export default async function AccountPage() {
   if (!user) redirect('/auth/login?next=/account')
 
   const { account } = user
-  const isFree = account.subscription_tier === 'free'
+  const { entitlements } = user
+  const isFree = entitlements.tier === 'free' && !entitlements.is_staff
 
   return (
     <>
@@ -40,7 +41,7 @@ export default async function AccountPage() {
           <h2 className="text-xs font-bold uppercase tracking-wide mb-4">Subscription</h2>
           <dl className="grid grid-cols-[8rem_1fr] gap-y-2 text-sm">
             <dt className="text-muted">Plan</dt>
-            <dd className="font-bold capitalize">{account.subscription_tier}</dd>
+            <dd className="font-bold capitalize">{entitlements.tier}</dd>
             <dt className="text-muted">Status</dt>
             <dd className="capitalize">{account.subscription_status}</dd>
             {account.trial_ends_at && (<><dt className="text-muted">Trial ends</dt><dd>{formatDate(account.trial_ends_at)}</dd></>)}

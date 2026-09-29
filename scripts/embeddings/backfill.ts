@@ -14,23 +14,10 @@ import { getServiceDb, closeServiceDb } from '@/lib/db/service'
 import type { Db } from '@/lib/db/types'
 import { getCursor, setCursor } from '@/lib/import/pipeline'
 
-const DIM = 1024
 const MAX_CHARS = Number(process.env.EMBEDDING_MAX_CHARS ?? 6000)
 
-export type Embedder = (texts: string[]) => Promise<number[][]>
-
-export function openAiCompatibleEmbedder(): Embedder {
-  const url = process.env.EMBEDDING_API_URL, key = process.env.EMBEDDING_API_KEY, model = process.env.EMBEDDING_MODEL
-  if (!url || !key || !model) throw new Error('EMBEDDING_API_URL, EMBEDDING_API_KEY and EMBEDDING_MODEL are required')
-  return async (texts) => {
-    const res = await fetch(url, { method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: JSON.stringify({ model, input: texts, dimensions: DIM, output_dimension: DIM }) })
-    if (!res.ok) throw new Error(`embeddings ${res.status}: ${(await res.text()).slice(0, 200)}`)
-    const json = await res.json() as { data: Array<{ index: number; embedding: number[] }> }
-    const out = json.data.sort((a, b) => a.index - b.index).map(d => d.embedding)
-    for (const v of out) if (v.length !== DIM) throw new Error(`embedding dimension ${v.length}, expected ${DIM}`)
-    return out
-  }
-}
+export { openAiCompatibleEmbedder, type Embedder }
+import { openAiCompatibleEmbedder, EMBEDDING_DIM as DIM, type Embedder } from '@/lib/ai/embeddings'
 
 /** Text that represents a document for retrieval: title + body (or the canonical raw record when there is no body). */
 export function documentText(row: { title: string | null; body_text: string | null; doc_type: string; source: string; raw: unknown }): string {

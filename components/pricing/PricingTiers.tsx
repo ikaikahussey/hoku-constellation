@@ -14,10 +14,14 @@ export interface Tier {
   features: string[]
   cta: string
   highlighted: boolean
+  /** Shown after the price, e.g. "per seat". */
+  unit?: string
+  /** Checkout destination; defaults to sign-up with the plan. */
+  href?: string
 }
 
-export function PricingTiers({ tiers }: { tiers: Tier[] }) {
-  const [interval, setInterval] = useState<'monthly' | 'yearly'>('monthly')
+export function PricingTiers({ tiers, defaultInterval = 'yearly' }: { tiers: Tier[]; defaultInterval?: 'monthly' | 'yearly' }) {
+  const [interval, setInterval] = useState<'monthly' | 'yearly'>(defaultInterval)
 
   useEffect(() => {
     track(EVENTS.PRICING_VIEWED, {})
@@ -35,7 +39,7 @@ export function PricingTiers({ tiers }: { tiers: Tier[] }) {
               onClick={() => setInterval(opt)}
               className={`px-4 py-2 text-sm font-bold ${interval === opt ? 'bg-ink text-paper' : 'bg-paper text-ink'}`}
             >
-              {opt === 'monthly' ? 'Monthly' : 'Yearly (save ~17%)'}
+              {opt === 'monthly' ? 'Monthly' : 'Annual (save ~17%)'}
             </button>
           ))}
         </div>
@@ -44,14 +48,14 @@ export function PricingTiers({ tiers }: { tiers: Tier[] }) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {tiers.map(tier => {
           const price = interval === 'yearly' && tier.yearly ? tier.yearly : tier.monthly
-          const period = tier.id === 'free' ? '' : interval === 'yearly' && tier.yearly ? '/yr' : '/mo'
-          const href = tier.id === 'free' ? '/auth/signup' : `/auth/signup?plan=${tier.id}&interval=${interval}`
+          const period = tier.id === 'free' || price === 'Custom' ? '' : interval === 'yearly' && tier.yearly ? '/yr' : '/mo'
+          const href = tier.href ?? (tier.id === 'free' ? '/auth/signup' : `/workspace/billing?plan=${tier.id}&interval=${interval === 'yearly' ? 'year' : 'month'}`)
           return (
             <div key={tier.id} className={`p-6 flex flex-col border ${tier.highlighted ? 'border-ink border-2' : 'border-rule'}`}>
               <h2 className="text-xl font-bold">{tier.name}</h2>
               <p className="mt-2 mb-1 tabular">
                 <span className="text-3xl font-bold">{price}</span>
-                {period && <span className="text-muted">{period}</span>}
+                {period && <span className="text-muted">{period}{tier.unit ? ` ${tier.unit}` : ''}</span>}
               </p>
               <p className="text-sm text-muted mb-6">{tier.description}</p>
               <ul className="space-y-2 mb-8 flex-1 text-sm">

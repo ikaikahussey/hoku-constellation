@@ -3,84 +3,61 @@ import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
 import { PricingTiers, type Tier } from '@/components/pricing/PricingTiers'
 import { buttonClass } from '@/components/ui/Button'
+import { PRICING, formatUsd } from '@/lib/billing/plans'
+import { getSessionUser } from '@/lib/auth'
 
 export const metadata: Metadata = {
   title: 'Pricing',
-  description: 'Choose your HOKU Insider subscription. Free to search, subscribe for full access.',
+  description: 'HOKU Insider plans for readers and for government-relations professionals: legislative tracking, alerts, client reports, briefings, and Q&A.',
 }
+
+const p = PRICING.plans
 
 const tiers: Tier[] = [
   {
-    id: 'free',
-    name: 'Free',
-    monthly: '$0',
-    yearly: null,
-    description: 'Search and browse basic profiles',
-    features: [
-      'Search the database',
-      'View basic profile info (name, office, party, island)',
-      'Positions, board seats, and public connections',
-      'Browse by office, sector, and island',
-    ],
-    cta: 'Create free account',
-    highlighted: false,
+    id: 'reader', name: p.reader.name, monthly: formatUsd(p.reader.prices.month!.amount), yearly: null,
+    description: p.reader.tagline, features: p.reader.features, cta: 'Choose Reader', highlighted: false,
+    href: '/workspace/billing?plan=reader&interval=month',
   },
   {
-    id: 'individual',
-    name: 'Individual',
-    monthly: '$9.99',
-    yearly: '$99',
-    description: 'Full access for researchers and engaged citizens',
-    features: [
-      'Full access to all profiles',
-      'Complete campaign finance detail',
-      'Individual donor records',
-      'Relationship graphs',
-      'Lobbying, ethics disclosures, and PUC records',
-      'Legislative testimony and contracts',
-      'All linked reporting and timelines',
-      '14-day free trial',
-    ],
-    cta: 'Start free trial',
-    highlighted: true,
+    id: 'pro', name: p.pro.name, monthly: formatUsd(p.pro.prices.month!.amount), yearly: formatUsd(p.pro.prices.year!.amount), unit: 'per seat',
+    description: p.pro.tagline, features: p.pro.features, cta: 'Choose Pro', highlighted: true,
   },
   {
-    id: 'professional',
-    name: 'Professional',
-    monthly: '$29.99',
-    yearly: '$299',
-    description: 'For journalists, researchers, and policy professionals',
-    features: [
-      'Everything in Individual',
-      'REST API access (JSON)',
-      'CSV export of search results and donor lists',
-      'Email alerts when tracked profiles are updated',
-      'Priority access to new entity profiles',
-      '14-day free trial',
-    ],
-    cta: 'Start free trial',
-    highlighted: false,
+    id: 'organization', name: p.organization.name, monthly: 'Custom', yearly: 'Custom',
+    description: p.organization.tagline, features: p.organization.features, cta: 'Talk to us', highlighted: false,
+    href: 'mailto:constellation@hoku.fm?subject=HOKU%20Insider%20Organization%20plan',
   },
 ]
 
-export default function PricingPage() {
+export default async function PricingPage() {
+  const user = await getSessionUser()
   return (
     <>
-      <Header />
+      <Header signedIn={!!user} />
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-16">
         <div className="text-center mb-10">
-          <h1 className="text-3xl sm:text-4xl font-bold">Simple, transparent pricing</h1>
-          <p className="mt-4 text-lg text-muted">Free to search. Subscribe for the full picture.</p>
+          <h1 className="text-3xl sm:text-4xl font-bold">Pricing</h1>
+          <p className="mt-4 text-lg text-muted">Free to search. Subscribe for the records, the alerts, and the reports.</p>
         </div>
 
-        <PricingTiers tiers={tiers} />
+        <PricingTiers tiers={tiers} defaultInterval={PRICING.defaultInterval === 'year' ? 'yearly' : 'monthly'} />
 
-        <div className="border border-rule p-8 text-center max-w-2xl mx-auto mt-16">
-          <h2 className="text-xl font-bold mb-2">Institutional</h2>
-          <p className="text-muted mb-4">
-            For newsrooms, universities, law firms, and government offices. Multiple seats, custom data requests, SLA.
-          </p>
-          <a href="mailto:constellation@hoku.fm" className={buttonClass('secondary')}>Contact us</a>
+        <div className="grid md:grid-cols-2 gap-6 mt-16">
+          <div className="border border-rule p-6">
+            <h2 className="text-lg font-bold mb-2">Nonprofits and newsrooms</h2>
+            <p className="text-sm text-muted">{PRICING.coupons.nonprofit.percentOff}% off Pro and Organization for 501(c)(3) nonprofits, unions, and newsrooms. Choose the discount at checkout; we verify eligibility afterward.</p>
+          </div>
+          <div className="border border-rule p-6">
+            <h2 className="text-lg font-bold mb-2">Invoice billing</h2>
+            <p className="text-sm text-muted">Pay by invoice (net {PRICING.invoice.daysUntilDue}) with your PO number on every invoice. Available on Pro and Organization from the billing page.</p>
+          </div>
+        </div>
+
+        <div className="border border-rule p-8 text-center max-w-2xl mx-auto mt-12">
+          <h2 className="text-xl font-bold mb-2">Free account</h2>
+          <p className="text-muted mb-4">Search the database, see basic profiles, and keep a watchlist of up to 10 items.</p>
+          <a href="/auth/signup" className={buttonClass('secondary')}>Create free account</a>
         </div>
       </main>
       <Footer />

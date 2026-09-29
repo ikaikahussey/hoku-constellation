@@ -7,6 +7,7 @@ import type { EdgeWithEnds } from '@/lib/db/queries/edges'
 import { getCurrentUser } from '@/lib/auth'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
+import { EntityTools } from '@/components/workspace/EntityTools'
 import { PaywallGate } from '@/components/layout/PaywallGate'
 import { TrackEntityView } from '@/components/profile/TrackEntityView'
 import { Badge } from '@/components/ui/Badge'
@@ -86,7 +87,7 @@ export default async function BillPage({ params }: Props) {
 
   const measure = attr(bill, 'measure_number')
   const session = attr(bill, 'session')
-  const status = attr(bill, 'status')
+  const status = attr(bill, 'status') ?? attr(bill, 'current_status')
   const description = attr(bill, 'description')
   const url = attr(bill, 'url')
 
@@ -150,6 +151,7 @@ export default async function BillPage({ params }: Props) {
             </div>
           </PaywallGate>
         </section>
+        <EntityTools entityId={bill.id} kind="bill" name={measure ?? bill.name} path={`/bills/${bill.id}`} />
       </main>
       <Footer />
     </>

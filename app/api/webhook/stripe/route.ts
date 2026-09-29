@@ -5,6 +5,7 @@ import { updateUserAccountByUserId, updateUserAccountByStripeCustomer, getUserAc
 import { EVENTS } from '@/lib/analytics-events'
 import { captureServerEvent } from '@/lib/analytics-server'
 import type { UserAccountRow } from '@/lib/db/types'
+import { handleTeamBillingEvent } from '@/lib/billing'
 
 function getStripe() {
   return new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2026-08-26.dahlia' })
@@ -43,6 +44,18 @@ export async function POST(request: NextRequest) {
 
   const db = await getServiceDb()
 
+  // Team subscriptions (E6) drive app.team and therefore app.entitlements().
+  const team = await handleTeamBillingEvent(stripe, db, event)
+  if (team.handled) {
+    if (event.type === 'checkout.session.completed' && team.teamId) {
+      const session = event.data.object as Stripe.Checkout.Session
+      const owner = await db.one<{ user_id: string }>(`select user_id from app.team_member where team_id = $1 and role = 'owner'`, [team.teamId])
+      if (owner) await captureServerEvent(owner.user_id, EVENTS.CHECKOUT_COMPLETED, { tier: String(session.metadata?.plan ?? 'pro'), amount: (session.amount_total ?? 0) / 100, currency: session.currency ?? 'usd' })
+    }
+    return NextResponse.json({ received: true, team: team.teamId ?? null })
+  }
+
+  // Legacy individual subscriptions (user_account), kept until those customers move to teams.
   switch (event.type) {
     case 'checkout.session.completed': {
       const session = event.data.object as Stripe.Checkout.Session
