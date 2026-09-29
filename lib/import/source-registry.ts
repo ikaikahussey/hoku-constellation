@@ -250,10 +250,10 @@ export const SOURCE_REGISTRY: SourceDefinition[] = [
   },
   // ============================================================ Tier 2 — State
   {
-    key: 'dcca_breg', name: 'DCCA Business Registration — officers & registered agents', agency: 'DCCA BREG',
-    jurisdiction: 'state', accessMethod: 'html', baseUrl: 'https://hbe.ehawaii.gov/documents/search.html',
-    docTypes: ['business_registration'], edgeTypes: ['officer_of', 'director_of'], entityKinds: ['org', 'person'], cadence: 'monthly', tier: 2, status: 'planned',
-    notes: 'Per-entity lookups for existing orgs only; UIPA bulk export is the alternative.',
+    key: 'dcca_breg', name: 'DCCA Business Registration — registry export (Entity List Builder or UIPA)', agency: 'DCCA BREG',
+    jurisdiction: 'state', accessMethod: 'manual_uipa', baseUrl: 'https://hbe.dcca.hawaii.gov/entity-list-builder',
+    docTypes: ['business_registration'], edgeTypes: ['officer_of', 'director_of'], entityKinds: ['org', 'person'], cadence: 'monthly', tier: 1, status: 'manual',
+    notes: 'The portal (hbe.dcca.hawaii.gov, formerly hbe.ehawaii.gov) is robots.txt "Disallow: /" and reCAPTCHA-protected: never fetched. Load a purchased Entity List Builder export or a UIPA extract as CSV via scripts/import/dcca-breg.ts --file= or the /admin/import upload. See docs/HAWAII_CORPORATIONS.md.',
   },
   {
     key: 'dcca_pvl', name: 'DCCA Professional & Vocational Licensing', agency: 'DCCA PVL',

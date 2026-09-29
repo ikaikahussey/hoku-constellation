@@ -76,9 +76,10 @@ CAPTCHA, paid, or terms forbid automated access), **manual** (UIPA request; CSV 
 | `lda` | Lobbying Disclosure Act — LD-1 / LD-2 / LD-203 | U.S. Senate / House (LDA.gov) (federal) | api — https://lda.gov | weekly | **planned** | lda_filing → lobbied_for, lobbied_on, contributed_to | lda.senate.gov retired 2026-06-30; filter client/registrant state = HI. Secrets: LDA_API_TOKEN. |
 | `usaspending` | USAspending — federal awards with Hawaiʻi place of performance | U.S. Treasury (federal) | api — https://api.usaspending.gov | weekly | **live** | contract, grant → awarded_contract, awarded_grant |  |
 | `sam` | SAM.gov — entity registrations & exclusions | GSA (federal) | api — https://api.sam.gov | weekly | **planned** | entity_registration, exclusion → sanctioned_by |  Secrets: SAM_API_KEY. |
-| `irs_eo` | IRS — Exempt Organizations BMF & 990 e-file | Internal Revenue Service (federal) | bulk_download — https://www.irs.gov | monthly | **planned** | irs_990 → officer_of, director_of |  |
+| `irs_eo` | IRS — Exempt Organizations Business Master File (Hawaiʻi) | Internal Revenue Service (federal) | bulk_download — https://www.irs.gov/pub/irs-soi/eo_hi.csv | monthly | **live** | entity_registration → (none) | ≈9,700 Hawaiʻi exempt orgs; resolves by EIN. |
 | `propublica_990` | ProPublica Nonprofit Explorer | ProPublica (federal) | api — https://projects.propublica.org | monthly | **live** | irs_990 → officer_of, director_of |  |
 | `sec_edgar` | SEC EDGAR — submissions & DEF 14A officers/directors | U.S. Securities and Exchange Commission (federal) | api — https://data.sec.gov | weekly | **live** | sec_filing → officer_of, director_of | Requires descriptive User-Agent; ≤ 10 req/s. |
+| `sec_hi_companies` | SEC EDGAR — every filer with a Hawaiʻi business address | U.S. Securities and Exchange Commission (federal) | api — https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&State=HI&output=atom | monthly | **live** | entity_registration → (none) | ≈780 filers, mostly Form D; insider-only filers skipped. |
 | `hnl_permits` | Honolulu — building permits | City & County of Honolulu DPP (honolulu) | socrata — https://data.honolulu.gov | weekly | **planned** | permit → owns |  Secrets: SOCRATA_APP_TOKEN. |
 | `hnl_council` | Honolulu City Council — legislation & votes | Honolulu City Council (honolulu) | html — https://hnldoc.ehawaii.gov | weekly | **planned** | measure, vote → sponsored, voted_on |  |
 | `hnl_ethics` | Honolulu Ethics Commission — lobbyists & disclosures | Honolulu Ethics Commission (honolulu) | html — https://www.honolulu.gov/ethics | monthly | **planned** | lobbyist_registration, financial_disclosure → lobbied_for, disclosed_interest |  |
@@ -96,7 +97,8 @@ CAPTCHA, paid, or terms forbid automated access), **manual** (UIPA request; CSV 
 
 | Key | Source | Agency | Access | Cadence | Status | Documents → edges | Notes |
 |---|---|---|---|---|---|---|---|
-| `dcca_breg` | DCCA Business Registration — officers & registered agents | DCCA BREG (state) | html — https://hbe.ehawaii.gov/documents/search.html | monthly | **planned** | business_registration → officer_of, director_of | Per-entity lookups for existing orgs only; UIPA bulk export is the alternative. |
+| `dcca_breg` | DCCA Business Registration — registry export (Entity List Builder or UIPA) | DCCA BREG (state) | manual_uipa — https://hbe.dcca.hawaii.gov/entity-list-builder | monthly | **manual** | business_registration → officer_of, director_of | Portal is robots.txt `Disallow: /` and reCAPTCHA: never fetched. CSV loader for a purchased or UIPA export. See docs/HAWAII_CORPORATIONS.md. |
+| `gleif` | GLEIF — Legal Entity Identifiers for Hawaiʻi-formed entities | Global Legal Entity Identifier Foundation (state) | api — https://api.gleif.org/api/v1/lei-records | monthly | **live** | entity_registration → owns | ≈430 records; DCCA file numbers from RA000605; Level 2 parents. CC0. |
 | `dcca_pvl` | DCCA Professional & Vocational Licensing | DCCA PVL (state) | html — https://mypvl.dcca.hawaii.gov | monthly | **planned** | license → licensed_by |  |
 | `dcca_enforcement` | DCCA RICO / OCP / Insurance / DFI / Securities enforcement | DCCA (state) | html — https://cca.hawaii.gov | monthly | **planned** | enforcement_action → sanctioned_by |  |
 | `dcca_catv` | DCCA Cable Television dockets | DCCA CATV (state) | html — https://cca.hawaii.gov/catv | monthly | **planned** | docket_filing → party_to |  |
@@ -144,7 +146,9 @@ CAPTCHA, paid, or terms forbid automated access), **manual** (UIPA request; CSV 
 8. `property_hnl` — parcels for tracked entities. **Done.**
 9. Next: `capitol_votes`, `capitol_committees`, `ethics_disclosures` (PDF), `elections`,
    `sunshine_calendar`, `lda`, `hnl_council`, `maui_council`, `hawaii_council` (Legistar client
-   exists), `hnl_permits` (Socrata client exists), `dcca_breg`.
+   exists), `hnl_permits` (Socrata client exists).
+10. Hawaiʻi corporations: `irs_eo`, `gleif`, `sec_hi_companies` live; `dcca_breg` loader ready for a
+    registry export (docs/HAWAII_CORPORATIONS.md). Next: Form D related persons. **Done.**
 
 ## 5. Scheduling
 

@@ -11,7 +11,7 @@
 import type { Db } from '@/lib/db/types'
 import { fetchJson, HttpError } from '../http'
 import { processRecord, emptyResult, resolveRef, type BatchResult, type EdgeInput } from '../pipeline'
-import { cleanName, islandForZip, toIsoDate } from '../normalize'
+import { cleanName, islandForZip, normalizeDccaFileNumber, toIsoDate } from '../normalize'
 import type { ImportOptions, SourcePage } from '../types'
 
 export const SOURCE_KEY = 'gleif'
@@ -64,8 +64,7 @@ export function legalForm(form: LeiRecord['attributes']['entity']['legalForm']):
 /** "372533  c5" → "372533 C5". Only for records registered at the Hawaiʻi registry. */
 export function dccaFileNumber(entity: LeiRecord['attributes']['entity']): string | null {
   if (entity.registeredAt?.id !== HAWAII_BREG_RA) return null
-  const v = cleanName(entity.registeredAs)
-  return v ? v.toUpperCase() : null
+  return normalizeDccaFileNumber(entity.registeredAs)
 }
 
 export function hasDirectParent(r: LeiRecord): boolean {

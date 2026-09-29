@@ -82,3 +82,14 @@ export function islandForZip(zip: unknown): string | null {
   if (z.startsWith('968')) return 'Oʻahu'
   return ZIP_ISLAND[z] ?? null
 }
+
+/**
+ * DCCA Business Registration Division file number, as the registry prints it: digits, a space, and the
+ * entity-type suffix ("372533 C5", "12345 D1"). Accepts "372533c5", "372533  C5", " 12345-D1 ".
+ */
+export function normalizeDccaFileNumber(v: unknown): string | null {
+  const s = String(v ?? '').toUpperCase().replace(/\s+/g, ' ').trim()
+  if (!s) return null
+  const m = s.match(/^(\d{1,8})[\s-]*([A-Z]{1,2}\d{0,2})$/)
+  return m ? `${m[1]} ${m[2]}` : s
+}
