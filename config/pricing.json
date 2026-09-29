@@ -1,0 +1,44 @@
+{
+  "$comment": "HOKU Insider plans. Display prices and Stripe object names live here; Stripe price/coupon ids come from the env vars named below. Change prices here and in Stripe, never in code. docs/PRICING.md is the live-mode checklist.",
+  "currency": "usd",
+  "plans": {
+    "reader": {
+      "name": "Reader",
+      "tagline": "Entity and bill pages, limited alerts",
+      "seatBased": false,
+      "minSeats": 1,
+      "prices": {
+        "month": { "amount": 1500, "env": "STRIPE_PRICE_READER_MONTHLY", "lookupKey": "reader_monthly" }
+      },
+      "features": ["Entity and bill pages", "Money, lobbying, property and ethics records", "Alerts on up to 10 watch items", "No client reports", "No Q&A"]
+    },
+    "pro": {
+      "name": "Pro",
+      "tagline": "Legislative tracking, alerts, client reports, briefings, and Q&A",
+      "seatBased": true,
+      "minSeats": 1,
+      "prices": {
+        "month": { "amount": 20000, "env": "STRIPE_PRICE_PRO_MONTHLY", "lookupKey": "pro_monthly_seat" },
+        "year": { "amount": 200000, "env": "STRIPE_PRICE_PRO_YEARLY", "lookupKey": "pro_yearly_seat" }
+      },
+      "features": ["Unlimited watchlists and alerts (email, Slack, digests)", "Client reports with approve-before-send", "Bill briefings and dossiers", "Ask HOKU Insider: 100 questions per seat per day", "CSV, PDF and calendar exports"]
+    },
+    "organization": {
+      "name": "Organization",
+      "tagline": "Pro for teams of 5 or more, with API access and invoice billing",
+      "seatBased": true,
+      "minSeats": 5,
+      "custom": true,
+      "prices": {
+        "year": { "amount": 200000, "env": "STRIPE_PRICE_ORGANIZATION_YEARLY", "lookupKey": "organization_yearly_seat" }
+      },
+      "features": ["Everything in Pro", "300 questions per seat per day", "API and bulk export access", "Custom letterhead on reports", "Invoice billing (net 30, PO numbers)", "Priority support"]
+    }
+  },
+  "defaultInterval": "year",
+  "invoice": { "daysUntilDue": 30 },
+  "coupons": {
+    "nonprofit": { "name": "Nonprofit and newsroom", "percentOff": 40, "duration": "forever", "env": "STRIPE_COUPON_NONPROFIT", "code": "NONPROFIT40" },
+    "design_partner": { "name": "Design partner", "percentOff": 100, "duration": "repeating", "durationInMonths": 6, "env": "STRIPE_COUPON_DESIGN_PARTNER", "code": "DESIGNPARTNER" }
+  }
+}
