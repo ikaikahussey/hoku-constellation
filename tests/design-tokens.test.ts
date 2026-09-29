@@ -14,6 +14,7 @@ const ALLOW_FILES = new Set([
   'components/brand/Wordmark.tsx',         // Mark: black square, white H (SVG fill attributes)
   'app/api/og/route.tsx',                  // @vercel/og renders outside CSS; mirrors the tokens
   'app/manifest.ts',                       // PWA manifest colors
+  'lib/brand-tokens.ts',                   // tokens for email/PDF/DOCX renderers; asserted equal to globals.css below
 ])
 const COLOR_LITERAL = /#(?:[0-9a-fA-F]{3}){1,2}\b|\brgba?\(|\bhsla?\(/
 /** Legacy palette utilities (navy/gold theme and default Tailwind hues). */
@@ -56,5 +57,11 @@ describe('design tokens', () => {
     const colors = [...css.matchAll(/--color-[a-z0-9-]+: (#[0-9A-Fa-f]{6})/g)].map(m => m[1].toUpperCase())
     // every non-red color is a gray (r=g=b)
     for (const c of colors) if (!['#CC0000', '#990000'].includes(c)) expect(c.slice(1, 3) === c.slice(3, 5) && c.slice(3, 5) === c.slice(5, 7), c).toBe(true)
+  })
+  it('lib/brand-tokens.ts mirrors globals.css', async () => {
+    const css = readFileSync(join(ROOT, 'app/globals.css'), 'utf8')
+    const { TOKENS } = await import('@/lib/brand-tokens')
+    const map: Record<string, string> = { ink: 'ink', paper: 'paper', link: 'link', muted: 'muted', rule: 'rule', gray100: 'gray-100' }
+    for (const [k, v] of Object.entries(TOKENS)) expect(css, k).toContain(`--color-${map[k]}: ${v}`)
   })
 })

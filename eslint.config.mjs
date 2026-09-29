@@ -16,7 +16,7 @@ const eslintConfig = defineConfig([
   // HOKU Insider design system: colors come from app/globals.css tokens only.
   {
     files: ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}", "lib/**/*.{ts,tsx}"],
-    ignores: ["components/brand/Wordmark.tsx", "app/api/og/route.tsx", "app/manifest.ts"],
+    ignores: ["components/brand/Wordmark.tsx", "app/api/og/route.tsx", "app/manifest.ts", "lib/brand-tokens.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
