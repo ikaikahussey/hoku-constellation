@@ -21,6 +21,7 @@ export function Footer() {
             <ul className="space-y-2 text-sm">
               <li><Link href="/search">Search</Link></li>
               <li><Link href="/explore">Explore</Link></li>
+              <li><Link href="/documents">Documents</Link></li>
               <li><Link href="/pricing">Pricing</Link></li>
             </ul>
           </nav>
