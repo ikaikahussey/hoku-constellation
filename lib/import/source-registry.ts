@@ -155,9 +155,10 @@ export const SOURCE_REGISTRY: SourceDefinition[] = [
     docTypes: ['entity_registration', 'exclusion'], edgeTypes: ['sanctioned_by'], entityKinds: ['org'], cadence: 'weekly', tier: 1, status: 'planned', secrets: ['SAM_API_KEY'],
   },
   {
-    key: 'irs_eo', name: 'IRS — Exempt Organizations BMF & 990 e-file', agency: 'Internal Revenue Service',
-    jurisdiction: 'federal', accessMethod: 'bulk_download', baseUrl: 'https://www.irs.gov',
-    docTypes: ['irs_990'], edgeTypes: ['officer_of', 'director_of'], entityKinds: ['org', 'person'], cadence: 'monthly', tier: 1, status: 'planned',
+    key: 'irs_eo', name: 'IRS — Exempt Organizations Business Master File (Hawaiʻi)', agency: 'Internal Revenue Service',
+    jurisdiction: 'federal', accessMethod: 'bulk_download', baseUrl: 'https://www.irs.gov/pub/irs-soi/eo_hi.csv',
+    docTypes: ['entity_registration'], edgeTypes: [], entityKinds: ['org'], cadence: 'monthly', tier: 1, status: 'live',
+    notes: 'Every tax-exempt organization with a Hawaiʻi address (≈9,700): EIN, legal name, address, 501(c) subsection, ruling date, NTEE, assets/income. Public domain; refreshed monthly by the IRS.',
   },
   {
     key: 'propublica_990', name: 'ProPublica Nonprofit Explorer', agency: 'ProPublica',

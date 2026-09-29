@@ -59,3 +59,26 @@ export function normalizeTmk(tmk: string): string {
 export function normalizeMeasure(m: string): string {
   return m.toUpperCase().replace(/\s+/g, '').replace(/(SD|HD|CD)\d+$/i, '')
 }
+
+// ---------------------------------------------------------------- Hawaiʻi ZIP → island
+
+const ZIP_ISLAND: Record<string, string> = {}
+const assign = (island: string, zips: number[]) => { for (const z of zips) ZIP_ISLAND[String(z)] = island }
+// USPS five-digit ZIPs outside Honolulu's 968xx block. 968xx is always Oʻahu.
+assign('Oʻahu', [96701, 96706, 96707, 96709, 96712, 96717, 96730, 96731, 96734, 96744, 96759, 96762, 96782, 96786, 96789, 96791, 96792, 96795, 96797])
+assign('Kauaʻi', [96703, 96705, 96714, 96715, 96716, 96722, 96741, 96746, 96747, 96751, 96752, 96754, 96756, 96765, 96766, 96769, 96796])
+assign('Maui', [96708, 96713, 96732, 96733, 96753, 96761, 96767, 96768, 96779, 96784, 96788, 96790, 96793])
+assign('Molokaʻi', [96729, 96742, 96748, 96757, 96770])
+assign('Lānaʻi', [96763])
+assign('Hawaiʻi', [96704, 96710, 96718, 96719, 96720, 96721, 96725, 96726, 96727, 96728, 96737, 96738, 96739, 96740, 96743, 96745, 96749, 96750, 96755, 96760, 96764, 96771, 96772, 96773, 96774, 96776, 96777, 96778, 96780, 96781, 96783, 96785])
+
+/**
+ * Island for a Hawaiʻi ZIP ("96813", "96813-1234"), spelled as the entity attributes store it
+ * ("Oʻahu", "Maui", "Kauaʻi", "Hawaiʻi", "Molokaʻi", "Lānaʻi"). Null for non-Hawaiʻi or unknown ZIPs.
+ */
+export function islandForZip(zip: unknown): string | null {
+  const z = String(zip ?? '').trim().slice(0, 5)
+  if (!/^\d{5}$/.test(z)) return null
+  if (z.startsWith('968')) return 'Oʻahu'
+  return ZIP_ISLAND[z] ?? null
+}
