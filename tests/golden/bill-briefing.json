@@ -1,0 +1,193 @@
+{
+  "kind": "bill",
+  "entity": {
+    "id": "<id:1>",
+    "name": "HB123 (2027)",
+    "kind": "bill"
+  },
+  "summary": {
+    "source": "model",
+    "sentences": [
+      {
+        "text": "The record shows: HB123 (2027): RELATING TO HEALTH.; Establishes a community health worker certification program.",
+        "documentIds": [
+          "<id:2>"
+        ]
+      },
+      {
+        "text": "The record shows: Current status: Bill scheduled to be heard by FIN on Tuesday, 02-24-27 9:00AM in House conference room 308.",
+        "documentIds": [
+          "<id:2>"
+        ]
+      },
+      {
+        "text": "The record shows: Current referral: HLT, FIN.",
+        "documentIds": [
+          "<id:2>"
+        ]
+      },
+      {
+        "text": "The record shows: Next deadline: testimony for the FIN hearing at 2027-02-24 09:00 HST is due by 2027-02-23 09:00 HST.",
+        "documentIds": [
+          "<id:2>"
+        ]
+      }
+    ],
+    "model": "fake-echo"
+  },
+  "sections": [
+    {
+      "key": "status",
+      "title": "Status and next deadline",
+      "lines": [
+        {
+          "text": "Current status: Bill scheduled to be heard by FIN on Tuesday, 02-24-27 9:00AM in House conference room 308.",
+          "documentIds": [
+            "<id:2>"
+          ]
+        },
+        {
+          "text": "Current referral: HLT, FIN",
+          "documentIds": [
+            "<id:2>"
+          ]
+        },
+        {
+          "text": "Next deadline: testimony for the FIN hearing at 2027-02-24 09:00 HST is due by 2027-02-23 09:00 HST",
+          "documentIds": [
+            "<id:2>"
+          ]
+        }
+      ],
+      "note": "Session-calendar deadlines (decking, crossover) appear once the Legislature’s session calendar is ingested."
+    },
+    {
+      "key": "drafts",
+      "title": "Changes between drafts",
+      "lines": [
+        {
+          "text": "2027-02-16 Passed Second Reading as amended in HD 1 and referred to the committee(s) on FIN.",
+          "documentIds": [
+            "<id:2>"
+          ]
+        },
+        {
+          "text": "2027-02-18 Reported from HLT (Stand. Com. Rep. No. 412) as amended in HD 1, recommending passage on Second Reading.",
+          "documentIds": [
+            "<id:2>"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "committees",
+      "title": "Committees of referral",
+      "lines": [
+        {
+          "text": "HLT members: Della Au Belatti (chair), Gene Ward",
+          "documentIds": [
+            "<id:3>"
+          ]
+        },
+        {
+          "text": "HLT vote: aye — Della Au Belatti; aye with reservations — Gene Ward",
+          "documentIds": [
+            "<id:4>"
+          ]
+        },
+        {
+          "text": "FIN members: Kyle Yamashita (chair)",
+          "documentIds": [
+            "<id:3>"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "sponsors",
+      "title": "Sponsors",
+      "lines": [
+        {
+          "text": "Della Au Belatti (introducer)",
+          "documentIds": [
+            "<id:2>"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "testimony",
+      "title": "Testimony by position",
+      "lines": [
+        {
+          "text": "In support: 2 testifiers, including Hawaiʻi Medical Association, Kaiāulu Health Alliance",
+          "documentIds": [
+            "<id:5>"
+          ]
+        },
+        {
+          "text": "In opposition: 1 testifier",
+          "documentIds": [
+            "<id:5>"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "money",
+      "title": "Contributions in the last two election cycles",
+      "lines": [
+        {
+          "text": "Hawaiʻi Medical Association → Kyle Yamashita: $1,000 in 1 contribution",
+          "documentIds": [
+            "<id:6>"
+          ]
+        },
+        {
+          "text": "Kaiāulu Health Alliance → Della Au Belatti: $500 in 1 contribution",
+          "documentIds": [
+            "<id:7>"
+          ]
+        }
+      ],
+      "note": "From testifying organizations, their officers and directors, and organizations lobbying on this bill, to the sponsors and to members of the referral committees."
+    },
+    {
+      "key": "lobbying",
+      "title": "Lobbying filings naming this bill",
+      "lines": [
+        {
+          "text": "Pacific Pharma Co (oppose) reported lobbying on this bill",
+          "documentIds": [
+            "<id:8>"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "indicators",
+      "title": "Indicators",
+      "lines": [
+        {
+          "text": "Testimony balance: 2 support, 1 oppose, 0 comments",
+          "documentIds": [
+            "<id:5>"
+          ]
+        },
+        {
+          "text": "Sponsors: 1 legislator (1 introducer, 0 co-introducers)",
+          "documentIds": [
+            "<id:2>"
+          ]
+        },
+        {
+          "text": "Committee and floor votes so far: 1 aye, 1 aye with reservations",
+          "documentIds": [
+            "<id:4>"
+          ]
+        }
+      ],
+      "note": "Factual signals recorded so far. This section does not predict an outcome."
+    }
+  ]
+}

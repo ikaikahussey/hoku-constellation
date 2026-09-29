@@ -6,6 +6,7 @@ import type { Db } from '@/lib/db/types'
 import { runMatcher, type MatchResult } from './matcher'
 import { runDelivery, runDigests, type DeliveryResult, type DigestResult } from './delivery'
 import { defaultChannels, type Channels } from './channels'
+import { markStaleBriefings } from '@/lib/briefings'
 
 export { runMatcher } from './matcher'
 export { runDelivery, runDigests } from './delivery'
@@ -16,6 +17,8 @@ export interface PipelineResult { match: MatchResult; delivery: DeliveryResult; 
 export async function runAlertPipeline(db: Db, opts: { now?: Date; channels?: Channels; digests?: boolean } = {}): Promise<PipelineResult> {
   const channels = opts.channels ?? defaultChannels()
   const match = await runMatcher(db, { now: opts.now })
+  // Cached briefings touched by new documents or edges are regenerated on next view (E4).
+  await markStaleBriefings(db, new Date(match.windowStart))
   const delivery = await runDelivery(db, channels, { now: opts.now })
   const digests = opts.digests ? await runDigests(db, channels, { now: opts.now }) : undefined
   return { match, delivery, digests }

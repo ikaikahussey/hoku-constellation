@@ -1,0 +1,189 @@
+{
+  "client": {
+    "id": "<id:1>",
+    "name": "Kaiāulu Health Alliance"
+  },
+  "period": {
+    "end": "2027-02-21",
+    "start": "2027-02-15"
+  },
+  "sections": [
+    {
+      "key": "status",
+      "items": [],
+      "title": "Bill status changes"
+    },
+    {
+      "key": "hearings",
+      "items": [
+        {
+          "date": "2027-02-19",
+          "text": "HB123 (2027): Bill scheduled to be heard by FIN on Tuesday, 02-24-27 9:00AM in House conference room 308.",
+          "documentIds": [
+            "<id:2>"
+          ]
+        }
+      ],
+      "title": "Hearings"
+    },
+    {
+      "key": "votes",
+      "items": [
+        {
+          "date": "2027-02-17",
+          "text": "HB123 (2027): vote recorded in HLT — 1 aye, 1 aye with reservations",
+          "documentIds": [
+            "<id:3>"
+          ]
+        }
+      ],
+      "title": "Votes"
+    },
+    {
+      "key": "drafts",
+      "items": [
+        {
+          "date": "2027-02-16",
+          "text": "HB123 (2027): Passed Second Reading as amended in HD 1 and referred to the committee(s) on FIN.",
+          "documentIds": [
+            "<id:2>"
+          ]
+        },
+        {
+          "date": "2027-02-18",
+          "text": "HB123 (2027): Reported from HLT (Stand. Com. Rep. No. 412) as amended in HD 1, recommending passage on Second Reading.",
+          "documentIds": [
+            "<id:2>"
+          ]
+        }
+      ],
+      "title": "Drafts and committee reports"
+    },
+    {
+      "key": "outcomes",
+      "items": [],
+      "title": "Outcomes"
+    },
+    {
+      "key": "testimony",
+      "items": [
+        {
+          "date": "2027-02-18",
+          "text": "Kaiāulu Health Alliance testified (support) on HB123 (2027)",
+          "documentIds": [
+            "<id:4>"
+          ]
+        },
+        {
+          "text": "HB123 (2027): testimony filed — 2 in support, 1 in opposition, 0 with comments",
+          "documentIds": [
+            "<id:4>"
+          ]
+        }
+      ],
+      "title": "Testimony"
+    },
+    {
+      "key": "activity",
+      "items": [
+        {
+          "date": "2027-02-18",
+          "text": "Kaiāulu Health Alliance testified on HB123 (2027)",
+          "documentIds": [
+            "<id:4>"
+          ]
+        },
+        {
+          "date": "2027-02-16",
+          "text": "Kaiāulu Health Alliance contributed to Della Au Belatti ($500)",
+          "documentIds": [
+            "<id:5>"
+          ]
+        }
+      ],
+      "title": "Related activity"
+    },
+    {
+      "key": "upcoming",
+      "items": [
+        {
+          "date": "2027-02-24",
+          "text": "HB123 (2027): hearing 2027-02-24 09:00 HST; testimony due by 2027-02-23 09:00 HST (FIN)",
+          "documentIds": [
+            "<id:2>"
+          ]
+        }
+      ],
+      "title": "Upcoming hearings and deadlines"
+    }
+  ],
+  "narrative": {
+    "model": "fake-fabricating",
+    "blocks": [
+      {
+        "runs": [
+          {
+            "text": "HB123 (2027): Bill scheduled to be heard by FIN on Tuesday, 02-24-27 9:00AM in House conference room 308. ",
+            "cites": [
+              "<id:2>"
+            ]
+          },
+          {
+            "text": "HB123 (2027): vote recorded in HLT — 1 aye, 1 aye with reservations. ",
+            "cites": [
+              "<id:3>"
+            ]
+          },
+          {
+            "text": "HB123 (2027): Passed Second Reading as amended in HD 1 and referred to the committee(s) on FIN. ",
+            "cites": [
+              "<id:2>"
+            ]
+          },
+          {
+            "text": "HB123 (2027): Reported from HLT (Stand. Com. Rep. No. 412) as amended in HD 1, recommending passage on Second Reading. ",
+            "cites": [
+              "<id:2>"
+            ]
+          },
+          {
+            "text": "Kaiāulu Health Alliance testified (support) on HB123 (2027). ",
+            "cites": [
+              "<id:4>"
+            ]
+          },
+          {
+            "text": "HB123 (2027): testimony filed — 2 in support, 1 in opposition, 0 with comments. ",
+            "cites": [
+              "<id:4>"
+            ]
+          },
+          {
+            "text": "Kaiāulu Health Alliance testified on HB123 (2027). ",
+            "cites": [
+              "<id:4>"
+            ]
+          },
+          {
+            "text": "Kaiāulu Health Alliance contributed to Della Au Belatti ($500). ",
+            "cites": [
+              "<id:5>"
+            ]
+          },
+          {
+            "text": "HB123 (2027): hearing 2027-02-24 09:00 HST; testimony due by 2027-02-23 09:00 HST (FIN). ",
+            "cites": [
+              "<id:2>"
+            ]
+          }
+        ],
+        "type": "p"
+      }
+    ],
+    "errors": [
+      "sentence 1 cites unknown source(s) D999",
+      "sentence 1 cites unknown source(s) D999"
+    ],
+    "source": "facts_only"
+  }
+}

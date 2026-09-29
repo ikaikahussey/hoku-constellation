@@ -40,6 +40,17 @@ checks that this document lists every event and that no event name is hard-coded
 | `subscription_cancelled` | server, Stripe `customer.subscription.deleted` | `previous_tier?` |
 | `editorial_map_viewed` | editorial map page | — |
 | `export_clicked` | CSV/API export buttons | `format?`, `location?` |
+| `question_asked` | Ask HOKU Insider answered (server) | `question_length`, `result_count`, `answered` — never the question text |
+| `report_generated` | Client report draft created (server) | `narrative_source`, `cited_documents` |
+| `report_approved` | Team member approved a report (server) | — |
+| `report_sent` | Approved report emailed (server) | `recipients` (count only) |
+| `briefing_viewed` | Bill briefing or dossier opened | `kind` |
+| `team_created` | New team (server) | `plan` |
+| `member_invited` | Invitation sent (server) | `role` |
+| `watchlist_item_added` | Item added to a watchlist (server) | `item_type` |
+| `calendar_subscribed` | ICS feed URL created or rotated (server) | — |
+| `correction_submitted` | “Report an error” submitted (server) | `target` (entity/edge/document) |
+| `feedback_submitted` | In-app feedback button (server) | `length`, `is_design_partner` — text goes to the owner by email only |
 
 ## Person properties
 

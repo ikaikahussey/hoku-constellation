@@ -25,6 +25,18 @@ export const EVENTS = {
   SUBSCRIPTION_CANCELLED: 'subscription_cancelled',
   EDITORIAL_MAP_VIEWED: 'editorial_map_viewed',
   EXPORT_CLICKED: 'export_clicked',
+  // Part E — professional workspace
+  QUESTION_ASKED: 'question_asked',
+  REPORT_GENERATED: 'report_generated',
+  REPORT_APPROVED: 'report_approved',
+  REPORT_SENT: 'report_sent',
+  BRIEFING_VIEWED: 'briefing_viewed',
+  TEAM_CREATED: 'team_created',
+  MEMBER_INVITED: 'member_invited',
+  WATCHLIST_ITEM_ADDED: 'watchlist_item_added',
+  CALENDAR_SUBSCRIBED: 'calendar_subscribed',
+  CORRECTION_SUBMITTED: 'correction_submitted',
+  FEEDBACK_SUBMITTED: 'feedback_submitted',
 } as const
 
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS]
@@ -48,6 +60,17 @@ export interface EventProperties {
   subscription_cancelled: { previous_tier?: string }
   editorial_map_viewed: Record<string, never>
   export_clicked: { format?: string; location?: string }
+  question_asked: { question_length: number; result_count: number; answered: boolean }
+  report_generated: { narrative_source: string; cited_documents: number }
+  report_approved: Record<string, never>
+  report_sent: { recipients: number }
+  briefing_viewed: { kind: string }
+  team_created: { plan: string }
+  member_invited: { role: string }
+  watchlist_item_added: { item_type: string }
+  calendar_subscribed: Record<string, never>
+  correction_submitted: { target: string }
+  feedback_submitted: { length: number; is_design_partner: boolean }
 }
 
 /** Person properties allowed on identify(). No email, no name. */
