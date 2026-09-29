@@ -117,12 +117,17 @@ key (`SAM_API_KEY`) and are registered as `sam` (planned).
 ## Data-quality fix made alongside
 
 `sec_edgar`'s default company list pointed "HEI", "A&B", and "Matson" at the CIKs of HEICO Corp, Allied
-Capital, and Axalta Coating Systems. The list now holds verified Hawaiʻi registrants. Production still
-contains the two entities the old list created (HEICO CORP, Axalta Coating Systems Ltd.) and their proxy
-documents; they have no edges and can be deleted:
+Capital, and Axalta Coating Systems. The list now holds verified Hawaiʻi registrants. The two entities the
+old list had created in production (HEICO CORP, Axalta Coating Systems Ltd.) and their proxy documents had
+no edges and were deleted on 2026-09-29.
 
-```sql
-delete from document where source = 'sec_edgar' and source_record_id like any (array['0000046619:%', '0001616862:%']);
-delete from entity where identifiers->>'sec_cik' in ('0000046619', '0001616862')
-  and not exists (select 1 from edge where from_id = entity.id or to_id = entity.id);
-```
+## Production load (2026-09-29)
+
+| Source | Documents | New orgs | Edges | Errors |
+|---|---:|---:|---:|---:|
+| `irs_eo` | 9,658 | 9,497 | 0 | 0 |
+| `gleif` | 429 | 416 | 27 `owns` | 0 |
+| `sec_form_d` | 684 filings, 74 quarters | 346 | 2,946 officer/director (307 matched to known people, 2,639 in review) | 0 |
+
+Organizations rose from 1,073 to 11,330; 10,952 now carry an island, and 351 are linked across two or more
+of the identifiers above.
