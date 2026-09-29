@@ -57,7 +57,8 @@ export function formDDate(v: string | null | undefined): string | null {
 /** Quarterly ZIP links on the listing page, oldest first: [{ quarter: '2026q1', url }]. */
 export function parseQuarterLinks(html: string): Array<{ quarter: string; url: string }> {
   const seen = new Map<string, string>()
-  for (const m of html.matchAll(/href="([^"]*form-d-data-sets\/(\d{4})q([1-4])_d\.zip)"/gi)) {
+  // Most quarters are "2026q1_d.zip"; 2008q2–2013q4 are published as "2013q4_d_0.zip".
+  for (const m of html.matchAll(/href="([^"]*form-d-data-sets\/(\d{4})q([1-4])_d(?:_\d+)?\.zip)"/gi)) {
     const quarter = `${m[2]}q${m[3]}`
     if (!seen.has(quarter)) seen.set(quarter, new URL(m[1], 'https://www.sec.gov').toString())
   }

@@ -27,8 +27,9 @@ describe('zip + tsv reader', () => {
 
 describe('sec_form_d (Form D data sets, Hawaiʻi issuers)', () => {
   it('finds quarterly links on the listing page, oldest first, across both URL prefixes', () => {
-    const html = '<a href="/files/datastandardsinnovation/data/form-d-data-sets/2026q2_d.zip">Q2</a><a href="/files/structureddata/data/form-d-data-sets/2025q4_d.zip">Q4</a><a href="/files/structureddata/data/form-d-data-sets/2026q1_d.zip">Q1</a><a href="/files/structureddata/data/form-d-data-sets/2026q1_d.zip">dup</a>'
+    const html = '<a href="/files/structureddata/data/form-d-data-sets/2013q4_d_0.zip">old</a><a href="/files/datastandardsinnovation/data/form-d-data-sets/2026q2_d.zip">Q2</a><a href="/files/structureddata/data/form-d-data-sets/2025q4_d.zip">Q4</a><a href="/files/structureddata/data/form-d-data-sets/2026q1_d.zip">Q1</a><a href="/files/structureddata/data/form-d-data-sets/2026q1_d.zip">dup</a>'
     expect(formd.parseQuarterLinks(html)).toEqual([
+      { quarter: '2013q4', url: 'https://www.sec.gov/files/structureddata/data/form-d-data-sets/2013q4_d_0.zip' },
       { quarter: '2025q4', url: 'https://www.sec.gov/files/structureddata/data/form-d-data-sets/2025q4_d.zip' },
       { quarter: '2026q1', url: 'https://www.sec.gov/files/structureddata/data/form-d-data-sets/2026q1_d.zip' },
       { quarter: '2026q2', url: 'https://www.sec.gov/files/datastandardsinnovation/data/form-d-data-sets/2026q2_d.zip' },
