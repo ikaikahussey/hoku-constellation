@@ -15,9 +15,13 @@ export const IMPORTERS: Record<string, () => Promise<SourceModule>> = {
   fec: () => import('./fec'),
   usaspending: () => import('./usaspending'),
   propublica_990: () => import('./propublica-990'),
+  irs_eo: () => import('./irs-eo'),
+  gleif: () => import('./gleif'),
   sec_edgar: () => import('./sec-edgar'),
+  sec_form_d: () => import('./sec-form-d'),
   property_hnl: () => import('./property-hnl'),
   employee_compensation: () => import('./employee-compensation'),
+  dcca_breg: () => import('./dcca-breg'),
 }
 
 export const LIVE_SOURCE_KEYS = Object.keys(IMPORTERS)

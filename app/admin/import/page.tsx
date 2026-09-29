@@ -13,7 +13,7 @@ interface RunState { status: 'idle' | 'running' | 'done' | 'error'; totals?: Run
 const TIER_LABEL: Record<1 | 2 | 3, string> = { 1: 'Tier 1 — core public records', 2: 'Tier 2 — secondary sources', 3: 'Tier 3 — manual or restricted' }
 const STATUS_LABEL: Record<SourceStatus, string> = { live: '● Live', planned: '○ Planned', blocked: '⊘ Blocked', manual: '◇ Manual', retired: '× Retired' }
 
-const CSV_SOURCES = SOURCE_REGISTRY.filter(s => s.key === 'employee_compensation')
+const CSV_SOURCES = SOURCE_REGISTRY.filter(s => s.key === 'employee_compensation' || s.key === 'dcca_breg')
 
 function StatusBadge({ status }: { status: SourceStatus }) {
   return <Badge variant={status === 'live' ? 'solid' : status === 'blocked' || status === 'retired' ? 'muted' : 'outline'}>{STATUS_LABEL[status]}</Badge>

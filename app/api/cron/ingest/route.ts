@@ -40,7 +40,7 @@ async function handle(request: NextRequest) {
     try {
       const mod = await loadImporter(def.key)
       const summary = await runImporter(db, def.key, mod.importBatch, {
-        batchSize: 500, deadlineMs: Math.min(deadline, Date.now() + slice), log: m => { if (logs.length < 20) logs.push(m) },
+        batchSize: 500, deadlineMs: Math.min(deadline, Date.now() + slice), restartIfComplete: def.restartOnComplete === true, log: m => { if (logs.length < 20) logs.push(m) },
         onBatchCommitted: async () => { await runAlertPipeline(db) },
       })
       results.push({ source: def.key, ok: true, documents: summary.documents, edges: summary.edges, entitiesCreated: summary.entitiesCreated, errors: summary.errors, nextOffset: summary.nextOffset, done: summary.done, batches: summary.batches })

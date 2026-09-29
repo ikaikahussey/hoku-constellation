@@ -19,6 +19,8 @@ export interface RunOptions extends ImportOptions {
   maxBatches?: number
   /** Stop starting new batches after this epoch-ms deadline (serverless time budget). */
   deadlineMs?: number
+  /** Start at 0 when the stored cursor says the previous run completed (snapshot sources). */
+  restartIfComplete?: boolean
   /** Called after each non-empty batch commits (records may have been inserted or updated in place). Workers pass the alert pipeline here. */
   onBatchCommitted?: (batch: BatchResult) => Promise<void>
 }
@@ -29,7 +31,8 @@ export async function runImporter(realDb: Db, source: string, importBatch: Batch
   const started = Date.now()
   const batchSize = opts.batchSize ?? 500
   const cursor = await getCursor(db, source)
-  let offset = opts.offset ?? (opts.resume === false ? 0 : cursor.cursor_offset)
+  const restart = opts.resume === false || (opts.restartIfComplete === true && cursor.status === 'complete')
+  let offset = opts.offset ?? (restart ? 0 : cursor.cursor_offset)
   const total: RunSummary = { documents: 0, entitiesCreated: 0, edges: 0, nextOffset: offset, done: false, seen: 0, errors: 0, batches: 0, source, dry: !!opts.dry, durationMs: 0 }
   if (!opts.dry) await setCursor(db, source, offset, 'running')
   log(`starting at offset ${offset} (dry=${!!opts.dry}, limit=${opts.limit ?? '∞'})`)

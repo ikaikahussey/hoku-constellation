@@ -11,7 +11,7 @@ import { readMigrations } from '../helpers/pglite'
 export const SEED_SQL = `
 insert into entity (id, kind, name, aliases, identifiers, attributes) values
   ('00000000-0000-4000-8000-000000000001', 'person', 'Josh Green', '{"Green, Josh"}', '{"csc_reg_no":"CC10529"}', '{"slug":"josh-green","entity_types":["person","legislator"],"office_held":"Governor","island":"Oahu","status":"active"}'),
-  ('00000000-0000-4000-8000-000000000002', 'org', 'Hawaiian Electric Industries', '{"HEI"}', '{"sec_cik":"0000046619"}', '{"slug":"hawaiian-electric-industries","org_type":"corporation","sector":"Energy","island":"Oahu","status":"active"}'),
+  ('00000000-0000-4000-8000-000000000002', 'org', 'Hawaiian Electric Industries', '{"HEI"}', '{"sec_cik":"0000354707"}', '{"slug":"hawaiian-electric-industries","org_type":"corporation","sector":"Energy","island":"Oahu","status":"active"}'),
   ('00000000-0000-4000-8000-000000000003', 'person', 'Scott Seu', '{}', '{}', '{"slug":"scott-seu","entity_types":["person","executive"],"status":"active"}'),
   ('00000000-0000-4000-8000-000000000004', 'bill', 'SB1234 (2026)', '{}', '{"measure":"2026:SB1234"}', '{"slug":"sb1234-2026","measure_number":"SB1234","session":"2026","title":"RELATING TO ENERGY.","current_status":"Referred to EET, CPN."}')
 on conflict do nothing;

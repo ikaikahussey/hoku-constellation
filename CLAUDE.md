@@ -103,4 +103,5 @@ npx playwright test tests/e2e
 
 `docs/NEON_CUTOVER.md`, `docs/MIGRATION_INVENTORY.md`, `docs/PORT_RECONCILIATION.md`,
 `docs/EDGE_TYPES.md`, `docs/REBRAND.md`, `docs/ANALYTICS_EVENTS.md`, `docs/INGESTION_AUDIT.md`,
-`docs/INGESTION_REPORT.md`, `docs/PRICING.md`, `docs/OPERATIONS.md`, `docs/LEGAL_REVIEW_PACKET.md`.
+`docs/INGESTION_REPORT.md`, `docs/HAWAII_CORPORATIONS.md`, `docs/PRICING.md`, `docs/OPERATIONS.md`,
+`docs/LEGAL_REVIEW_PACKET.md`.
