@@ -11,10 +11,17 @@ beforeAll(async () => { db = await createTestDb() })
 afterAll(async () => { await db.end() })
 
 describe('sec_edgar', () => {
+  it('defaults to verified Hawaiʻi registrants, not the look-alike CIKs', () => {
+    expect(sec.DEFAULT_CIKS).toContain('0000354707') // Hawaiian Electric Industries
+    expect(sec.DEFAULT_CIKS).toContain('0001545654') // Alexander & Baldwin
+    expect(sec.DEFAULT_CIKS).toContain('0000003453') // Matson
+    for (const wrong of ['0000046619', '0000003906', '0001616862']) expect(sec.DEFAULT_CIKS).not.toContain(wrong) // HEICO, Allied Capital, Axalta
+    for (const cik of sec.DEFAULT_CIKS) expect(cik).toMatch(/^\d{10}$/)
+  })
   it('finds the latest DEF 14A and builds the archive URL', () => {
     const def = sec.latestDef14a(submissions as sec.Submissions)!
-    expect(def).toEqual({ accession: '0000046619-26-000005', date: '2026-03-20', doc: 'he-def14a.htm' })
-    expect(sec.archiveUrl('46619', def.accession, def.doc)).toBe('https://www.sec.gov/Archives/edgar/data/46619/000004661926000005/he-def14a.htm')
+    expect(def).toEqual({ accession: '0000354707-26-000005', date: '2026-03-20', doc: 'he-def14a.htm' })
+    expect(sec.archiveUrl('354707', def.accession, def.doc)).toBe('https://www.sec.gov/Archives/edgar/data/354707/000035470726000005/he-def14a.htm')
   })
   it('parses the director/officer table, deduplicating names and skipping totals', () => {
     expect(sec.parseDef14aPeople(html)).toEqual([
@@ -31,6 +38,6 @@ describe('sec_edgar', () => {
     expect(doc?.body_text).toContain('PROXY STATEMENT')
     expect(doc?.doc_date).toBe('2026-03-20')
     const org = await db.one<{ identifiers: Record<string, string> }>(`select identifiers from entity where kind = 'org'`)
-    expect(org?.identifiers.sec_cik).toBe('0000046619')
+    expect(org?.identifiers.sec_cik).toBe('0000354707')
   })
 })
