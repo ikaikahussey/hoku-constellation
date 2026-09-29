@@ -177,6 +177,12 @@ export const SOURCE_REGISTRY: SourceDefinition[] = [
     docTypes: ['sec_filing'], edgeTypes: ['officer_of', 'director_of'], entityKinds: ['org', 'person'], cadence: 'weekly', tier: 1, status: 'live',
     notes: 'Requires descriptive User-Agent; ≤ 10 req/s.',
   },
+  {
+    key: 'sec_hi_companies', name: 'SEC EDGAR — every filer with a Hawaiʻi business address', agency: 'U.S. Securities and Exchange Commission',
+    jurisdiction: 'federal', accessMethod: 'api', baseUrl: 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&State=HI&output=atom', urls: ['https://data.sec.gov'],
+    docTypes: ['entity_registration'], edgeTypes: [], entityKinds: ['org'], cadence: 'monthly', tier: 1, status: 'live',
+    notes: '≈780 filers, mostly private companies filing Form D. Name, EIN, state of incorporation, SIC and former names from data.sec.gov submissions. Insider-only filers (individuals) skipped. Descriptive User-Agent; ≤ 10 req/s.',
+  },
   // ============================================================ Tier 1 — Counties
   {
     key: 'hnl_permits', name: 'Honolulu — building permits', agency: 'City & County of Honolulu DPP',

@@ -1,0 +1,11 @@
+[
+  {"cik": "2108164", "entityType": "operating", "sic": "6770", "sicDescription": "Blank Checks", "name": "Pono Capital Four, Inc.", "tickers": ["PONO"], "exchanges": ["Nasdaq"], "ein": "000000000", "stateOfIncorporation": "E9", "stateOfIncorporationDescription": "Cayman Islands",
+   "addresses": {"business": {"street1": "643 ILALO ST", "street2": "#102", "city": "HONOLULU", "stateOrCountry": "HI", "zipCode": "96813"}, "mailing": {"street1": "643 ILALO ST", "city": "HONOLULU", "stateOrCountry": "HI", "zipCode": "96813"}},
+   "formerNames": [], "filings": {"recent": {"form": ["10-Q", "8-K", "4", "424B4"], "filingDate": ["2026-08-14", "2026-07-02", "2026-06-10", "2026-05-01"], "accessionNumber": ["a1", "a2", "a3", "a4"], "primaryDocument": ["q.htm", "k.htm", "f4.xml", "p.htm"]}}},
+  {"cik": "1484388", "entityType": "other", "sic": "", "sicDescription": "", "name": "Vanguard Medical Systems, LLC", "tickers": [], "exchanges": [], "ein": "271885521", "stateOfIncorporation": "DE", "stateOfIncorporationDescription": "DE",
+   "addresses": {"business": {"street1": "1100 ALAKEA ST", "street2": null, "city": "HONOLULU", "stateOrCountry": "HI", "zipCode": "96813"}, "mailing": {"street1": "PO BOX 1", "city": "HONOLULU", "stateOrCountry": "HI", "zipCode": "96801"}},
+   "formerNames": [{"name": "VMS Hawaii LLC", "from": "2010-03-01", "to": "2014-01-01"}], "filings": {"recent": {"form": ["D", "D/A"], "filingDate": ["2019-04-02", "2018-03-01"], "accessionNumber": ["d1", "d2"], "primaryDocument": ["primary_doc.xml", "primary_doc.xml"]}}},
+  {"cik": "1352430", "entityType": "other", "sic": "", "sicDescription": "", "name": "Lava Ventures, LLC", "tickers": [], "exchanges": [], "ein": null, "stateOfIncorporation": "HI", "stateOfIncorporationDescription": "HI",
+   "addresses": {"business": {"street1": "1 MAIN ST", "city": "KAILUA", "stateOrCountry": "HI", "zipCode": "96734"}, "mailing": {}},
+   "formerNames": [], "filings": {"recent": {"form": ["4", "4"], "filingDate": ["2012-01-05", "2011-12-01"], "accessionNumber": ["o1", "o2"], "primaryDocument": ["x.xml", "y.xml"]}}}
+]
