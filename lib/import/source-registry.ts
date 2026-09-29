@@ -161,6 +161,12 @@ export const SOURCE_REGISTRY: SourceDefinition[] = [
     notes: 'Every tax-exempt organization with a Hawaiʻi address (≈9,700): EIN, legal name, address, 501(c) subsection, ruling date, NTEE, assets/income. Public domain; refreshed monthly by the IRS.',
   },
   {
+    key: 'gleif', name: 'GLEIF — Legal Entity Identifiers for Hawaiʻi-formed entities', agency: 'Global Legal Entity Identifier Foundation',
+    jurisdiction: 'state', accessMethod: 'api', baseUrl: 'https://api.gleif.org/api/v1/lei-records?filter%5Bentity.jurisdiction%5D=US-HI',
+    docTypes: ['entity_registration'], edgeTypes: ['owns'], entityKinds: ['org'], cadence: 'monthly', tier: 2, status: 'live',
+    notes: 'CC0. ≈430 entities formed under Hawaiʻi law; records registered at RA000605 carry the DCCA BREG file number (registeredAs), the only open source of it. Level 2 direct parents become owns edges.',
+  },
+  {
     key: 'propublica_990', name: 'ProPublica Nonprofit Explorer', agency: 'ProPublica',
     jurisdiction: 'federal', accessMethod: 'api', baseUrl: 'https://projects.propublica.org',
     docTypes: ['irs_990'], edgeTypes: ['officer_of', 'director_of'], entityKinds: ['org', 'person'], cadence: 'monthly', tier: 1, status: 'live',

@@ -1,0 +1,74 @@
+{
+  "records": [
+    {
+      "type": "lei-records", "id": "254900TESTAINA000001",
+      "attributes": {
+        "lei": "254900TESTAINA000001",
+        "entity": {
+          "legalName": { "name": "KALIA AINA HOLDINGS, LLC", "language": "en" },
+          "otherNames": [{ "name": "KALIA AINA", "language": "en", "type": "TRADING_OR_OPERATING_NAME" }],
+          "legalAddress": { "language": "en", "addressLines": ["1000 BISHOP ST STE 800"], "city": "HONOLULU", "region": "US-HI", "country": "US", "postalCode": "96813" },
+          "headquartersAddress": { "language": "en", "addressLines": ["1000 BISHOP ST STE 800"], "city": "HONOLULU", "region": "US-HI", "country": "US", "postalCode": "96813" },
+          "registeredAt": { "id": "RA000605", "other": null }, "registeredAs": "372533  c5",
+          "jurisdiction": "US-HI", "category": "GENERAL", "legalForm": { "id": "VPBH", "other": null },
+          "status": "ACTIVE", "creationDate": "2026-07-16T00:00:00Z"
+        },
+        "registration": { "initialRegistrationDate": "2026-07-20T10:00:00Z", "lastUpdateDate": "2026-07-20T10:00:00Z", "status": "ISSUED", "nextRenewalDate": "2027-07-20T10:00:00Z", "managingLou": "5493001KJTIIGC8Y1R12" }
+      },
+      "relationships": { "direct-parent": { "links": { "reporting-exception": "https://api.gleif.org/api/v1/lei-records/254900TESTAINA000001/direct-parent-reporting-exception" } } }
+    },
+    {
+      "type": "lei-records", "id": "254900TESTINSURE0002",
+      "attributes": {
+        "lei": "254900TESTINSURE0002",
+        "entity": {
+          "legalName": { "name": "PACIFIC CAPTIVE INSURANCE COMPANY, INC.", "language": "en" },
+          "otherNames": [],
+          "legalAddress": { "language": "en", "addressLines": ["2 WAILEA ALANUI"], "city": "KIHEI", "region": "US-HI", "country": "US", "postalCode": "96753-1234" },
+          "headquartersAddress": { "language": "en", "addressLines": ["2211 N FIRST ST"], "city": "SAN JOSE", "region": "US-CA", "country": "US", "postalCode": "95131" },
+          "registeredAt": { "id": "RA000605", "other": null }, "registeredAs": "281944 D1",
+          "jurisdiction": "US-HI", "category": "GENERAL", "legalForm": { "id": "L2QV", "other": null },
+          "status": "ACTIVE", "creationDate": "2014-02-03T00:00:00Z"
+        },
+        "registration": { "initialRegistrationDate": "2015-01-12T00:00:00Z", "lastUpdateDate": "2026-01-10T00:00:00Z", "status": "LAPSED", "nextRenewalDate": "2026-01-12T00:00:00Z", "managingLou": "5493001KJTIIGC8Y1R12" }
+      },
+      "relationships": { "direct-parent": { "links": { "relationship-record": "https://api.gleif.org/api/v1/lei-records/254900TESTINSURE0002/direct-parent-relationship", "lei-record": "https://api.gleif.org/api/v1/lei-records/254900TESTINSURE0002/direct-parent" } } }
+    },
+    {
+      "type": "lei-records", "id": "254900TESTTRUST00003",
+      "attributes": {
+        "lei": "254900TESTTRUST00003",
+        "entity": {
+          "legalName": { "name": "MAKANA FAMILY TRUST", "language": "en" },
+          "otherNames": [],
+          "legalAddress": { "language": "en", "addressLines": ["75-5660 PALANI RD"], "city": "KAILUA KONA", "region": "US-HI", "country": "US", "postalCode": "96740" },
+          "headquartersAddress": { "language": "en", "addressLines": ["75-5660 PALANI RD"], "city": "KAILUA KONA", "region": "US-HI", "country": "US", "postalCode": "96740" },
+          "registeredAt": { "id": "RA999999", "other": null }, "registeredAs": null,
+          "jurisdiction": "US-HI", "category": "GENERAL", "legalForm": { "id": "8888", "other": "TRUST" },
+          "status": "INACTIVE", "creationDate": null
+        },
+        "registration": { "initialRegistrationDate": "2019-05-01T00:00:00Z", "lastUpdateDate": "2024-05-01T00:00:00Z", "status": "RETIRED", "nextRenewalDate": null, "managingLou": "5493001KJTIIGC8Y1R12" }
+      },
+      "relationships": { "direct-parent": { "links": {} } }
+    }
+  ],
+  "parents": {
+    "254900TESTINSURE0002": {
+      "type": "lei-records", "id": "5493TESTPARENT000004",
+      "attributes": {
+        "lei": "5493TESTPARENT000004",
+        "entity": {
+          "legalName": { "name": "EXAMPLE PAYMENTS HOLDINGS, INC.", "language": "en" },
+          "otherNames": [],
+          "legalAddress": { "language": "en", "addressLines": ["251 LITTLE FALLS DR"], "city": "WILMINGTON", "region": "US-DE", "country": "US", "postalCode": "19808" },
+          "headquartersAddress": { "language": "en", "addressLines": ["2211 N FIRST ST"], "city": "SAN JOSE", "region": "US-CA", "country": "US", "postalCode": "95131" },
+          "registeredAt": { "id": "RA000602", "other": null }, "registeredAs": "5710041",
+          "jurisdiction": "US-DE", "category": "GENERAL", "legalForm": { "id": "XTIQ", "other": null },
+          "status": "ACTIVE", "creationDate": "2015-01-08T00:00:00Z"
+        },
+        "registration": { "initialRegistrationDate": "2015-06-01T00:00:00Z", "lastUpdateDate": "2026-05-01T00:00:00Z", "status": "ISSUED", "nextRenewalDate": "2027-06-01T00:00:00Z", "managingLou": "EVK05KS7XY1DEII3R011" }
+      },
+      "relationships": {}
+    }
+  }
+}
