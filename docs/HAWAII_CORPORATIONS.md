@@ -9,7 +9,7 @@ the live sites on 2026-09-29, and how each source is loaded.
 |---|---|---|---|---|
 | DCCA Business Registration Division (the state registry) | `dcca_breg` | every corporation, LLC, partnership, and trade name registered in Hawaiʻi, with officers and agents | Entity List Builder purchase or UIPA extract, loaded as CSV | **manual** |
 | IRS Exempt Organizations Business Master File | `irs_eo` | ≈9,700 tax-exempt organizations with a Hawaiʻi address | public CSV, monthly | **live** |
-| SEC EDGAR, filers with a Hawaiʻi business address | `sec_hi_companies` | ≈780 filers, mostly private companies filing Form D | EDGAR browse (Atom) + data.sec.gov JSON | **live** |
+| SEC Form D data sets | `sec_form_d` | private offerings by Hawaiʻi issuers since 2008, with executive officers and directors | quarterly ZIPs under sec.gov/files | **live** |
 | SEC EDGAR proxy statements | `sec_edgar` | directors and officers of Hawaiʻi public companies | data.sec.gov JSON + DEF 14A | **live** |
 | GLEIF Legal Entity Identifiers | `gleif` | ≈430 entities formed under Hawaiʻi law; carries the DCCA file number; reported parent companies | public API, CC0 | **live** |
 | ProPublica Nonprofit Explorer (Form 990) | `propublica_990` | officers, directors, and pay at Hawaiʻi nonprofits | public API | **live** |
@@ -94,11 +94,16 @@ text.
 gives EIN, legal name, address, 501(c) subsection, ruling date, NTEE code, and latest assets, income, and
 revenue. One document per EIN; orgs attach to existing Form 990 orgs by EIN. The BMF names no people.
 
-**SEC EDGAR (`sec_hi_companies`).** Company browse with `State=HI` in Atom output lists ≈780 CIKs (the
-Atom names are broken, so names come from `data.sec.gov/submissions`). In a sample of 40, 35 were private
-companies whose filings are Form D offering notices, 3 were public registrants or trusts, and 2 filed only
-insider forms (individuals, skipped). Form D notices list executive officers, directors, and promoters;
-parsing them into edges is the natural next importer.
+**SEC Form D (`sec_form_d`).** About 780 EDGAR filers list a Hawaiʻi business address, and a sample showed
+most are private companies whose filings are Form D offering notices. EDGAR's company browse
+(`/cgi-bin/browse-edgar`) is disallowed by sec.gov's robots.txt, so it is not used. The SEC's quarterly
+Form D data sets (`https://www.sec.gov/data-research/sec-markets-data/form-d-data-sets`, files under
+`/files/`, which robots.txt permits) carry the same filings as tables: issuer name, CIK, address, entity
+type, jurisdiction and year of formation; offering size and industry; and related persons with their
+roles. Each batch reads one quarter (≈3–4 MB) and keeps filings whose primary issuer is in Hawaiʻi. The
+issuer resolves by CIK; executive officers and directors become `officer_of` / `director_of` edges
+(people resolve-only); promoters stay in the document. The cursor counts quarters, so later runs pick up
+only new quarters.
 
 **GLEIF (`gleif`).** `filter[entity.jurisdiction]=US-HI` returns ≈430 records. 345 are registered at
 `RA000605`, the GLEIF code for the Hawaiʻi DCCA registry, and carry the DCCA file number in `registeredAs`.

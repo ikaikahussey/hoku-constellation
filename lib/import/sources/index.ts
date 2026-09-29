@@ -18,7 +18,7 @@ export const IMPORTERS: Record<string, () => Promise<SourceModule>> = {
   irs_eo: () => import('./irs-eo'),
   gleif: () => import('./gleif'),
   sec_edgar: () => import('./sec-edgar'),
-  sec_hi_companies: () => import('./sec-hi-companies'),
+  sec_form_d: () => import('./sec-form-d'),
   property_hnl: () => import('./property-hnl'),
   employee_compensation: () => import('./employee-compensation'),
   dcca_breg: () => import('./dcca-breg'),
