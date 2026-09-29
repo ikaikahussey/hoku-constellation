@@ -57,11 +57,16 @@ export async function createTeam(db: Db, ownerUserId: string, name: string, opts
   const clean = name.trim().slice(0, 120)
   if (!clean) throw new TeamError('Team name is required')
   return db.transaction(async tx => {
-    const team = (await tx.one<TeamRow>(
-      `insert into app.team(name, is_personal, created_by) values ($1, $2, $3) returning *`, [clean, !!opts.personal, ownerUserId]))!
-    await tx.query(`insert into app.team_member(team_id, user_id, role, email, joined_at) values ($1, $2, 'owner', $3, now())`,
+    const inserted = await tx.one<TeamRow>(
+      opts.personal
+        ? `insert into app.team(name, is_personal, created_by) values ($1, true, $2) on conflict (created_by) where is_personal do nothing returning *`
+        : `insert into app.team(name, is_personal, created_by) values ($1, false, $2) returning *`, [clean, ownerUserId])
+    // A concurrent request already created this user's personal team.
+    if (!inserted) return (await tx.one<TeamRow>(`select * from app.team where created_by = $1 and is_personal`, [ownerUserId]))!
+    const team = inserted
+    await tx.query(`insert into app.team_member(team_id, user_id, role, email, joined_at) values ($1, $2, 'owner', $3, now()) on conflict do nothing`,
       [team.id, ownerUserId, opts.email ?? null])
-    await tx.query(`insert into app.watchlist(team_id, name, is_default, owner_user_id) values ($1, 'My watchlist', true, $2)`, [team.id, ownerUserId])
+    await tx.query(`insert into app.watchlist(team_id, name, is_default, owner_user_id) values ($1, 'My watchlist', true, $2) on conflict do nothing`, [team.id, ownerUserId])
     return team
   })
 }
@@ -79,7 +84,11 @@ export async function ensureActiveTeam(db: Db, userId: string, email?: string | 
   const teams = await getUserTeams(db, userId)
   if (teams.length) return teams[0]
   await createTeam(db, userId, 'Personal', { email, personal: true })
-  return (await getUserTeams(db, userId))[0]
+  const after = await getUserTeams(db, userId)
+  if (after.length) return after[0]
+  // The concurrent creator has not committed its membership row yet; read the team directly.
+  const t = (await db.one<TeamRow>(`select * from app.team where created_by = $1 and is_personal`, [userId]))!
+  return { ...t, role: 'owner', tier: 'free' }
 }
 
 export async function getTeam(db: Db, teamId: string): Promise<TeamRow | null> {

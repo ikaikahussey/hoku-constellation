@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createTestDb, type TestDb } from './helpers/pglite'
-import { createTeam, inviteMember, acceptInvitation, removeMember, transferOwnership, setMemberRole, seatsUsed, TeamError } from '@/lib/teams'
+import { createTeam, ensureActiveTeam, inviteMember, acceptInvitation, removeMember, transferOwnership, setMemberRole, seatsUsed, TeamError } from '@/lib/teams'
 import { getEntitlements, getTeamEntitlements, PLAN_FEATURES } from '@/lib/entitlements'
 
 let db: TestDb
@@ -188,6 +188,15 @@ describe('team management', () => {
     expect(await count(A2, `select * from app.note where author_user_id = '${A2}'`)).toBe(1)
     const notes = await db.many(`select * from app.note where team_id = $1`, [ids.a])
     expect(notes.length).toBe(2)
+  })
+})
+
+describe('personal workspace', () => {
+  it('concurrent first visits create exactly one personal team', async () => {
+    const teams = await Promise.all([1, 2, 3].map(() => ensureActiveTeam(db, 'racer', 'racer@example.com')))
+    expect(new Set(teams.map(t => t.id)).size).toBe(1)
+    expect(await db.many(`select 1 from app.team where created_by = 'racer' and is_personal`)).toHaveLength(1)
+    expect(await db.many(`select 1 from app.team_member m join app.team t on t.id = m.team_id where m.user_id = 'racer'`)).toHaveLength(1)
   })
 })
 

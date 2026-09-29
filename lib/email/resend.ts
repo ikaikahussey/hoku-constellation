@@ -92,8 +92,16 @@ class LogTransport implements EmailTransport {
 let override: EmailTransport | null = null
 export function setEmailTransportForTests(t: EmailTransport | null) { override = t }
 
+/** Process-wide outbox for EMAIL_TRANSPORT=memory (offline end-to-end runs). */
+export function memoryOutbox(): MemoryTransport {
+  const g = globalThis as unknown as { __hokuOutbox?: MemoryTransport }
+  g.__hokuOutbox ??= new MemoryTransport()
+  return g.__hokuOutbox
+}
+
 export function getEmailTransport(): EmailTransport {
   if (override) return override
+  if (process.env.EMAIL_TRANSPORT === 'memory') return memoryOutbox()
   const key = process.env.RESEND_API_KEY
   if (!key || process.env.EMAIL_TRANSPORT === 'log') return new LogTransport()
   return new ResendTransport(key)

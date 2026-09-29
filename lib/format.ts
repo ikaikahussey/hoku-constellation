@@ -41,3 +41,9 @@ export function formatCompactNumber(num: number): string {
   if (num >= 1_000) return `${(num / 1_000).toFixed(0)}K`
   return num.toString()
 }
+
+/** Timestamp from the database (Date from `pg`, string from casts/JSON) → ISO string, or '' when absent. */
+export function isoString(v: Date | string | null | undefined): string {
+  if (!v) return ''
+  return v instanceof Date ? v.toISOString() : String(v)
+}

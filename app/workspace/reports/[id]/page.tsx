@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requireWorkspace } from '@/lib/workspace'
+import { isoString } from '@/lib/format'
 import { getReport, uncitedSentences } from '@/lib/reports'
 import { citationNumbers } from '@/lib/render/model'
 import { ReportEditor } from '@/components/workspace/ReportEditor'
@@ -37,7 +38,7 @@ export default async function ReportPage({ params }: Props) {
           <h1 className="text-3xl font-bold">{c.client.name}</h1>
           <p className="mt-1 flex gap-2 items-center"><Badge variant={report.status === 'sent' ? 'solid' : 'outline'}>{report.status}</Badge>
             <span className="text-sm text-muted">{c.narrative.source === 'model' ? 'Summary drafted by AI from cited records' : c.narrative.source === 'edited' ? 'Summary edited by your team' : 'Summary compiled directly from records'}
-              {report.approved_at && ` · approved ${report.approved_at.slice(0, 10)}`}{report.sent_at && ` · sent ${report.sent_at.slice(0, 10)}`}</span></p>
+              {report.approved_at && ` · approved ${isoString(report.approved_at).slice(0, 10)}`}{report.sent_at && ` · sent ${isoString(report.sent_at).slice(0, 10)}`}</span></p>
         </div>
         <div className="flex gap-2">
           <a href={`/api/reports/${report.id}/file?format=pdf`} className={buttonClass('secondary', 'sm')}>Download PDF</a>

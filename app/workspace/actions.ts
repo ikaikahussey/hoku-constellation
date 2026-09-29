@@ -67,12 +67,16 @@ export async function switchTeam(fd: FormData) {
 }
 
 export async function createTeamAction(_: ActionState, fd: FormData): Promise<ActionState> {
-  return run(async ws => {
+  const ws = await requireWorkspace()
+  try {
     const team = await createTeamRow(ws.db, ws.user.id, str(fd, 'name'), { email: ws.user.email })
     ;(await cookies()).set(TEAM_COOKIE, team.id, { httpOnly: true, sameSite: 'lax', path: '/' })
     await captureServerEvent(ws.user.id, EVENTS.TEAM_CREATED, { plan: team.plan })
-    return `Created ${team.name}`
-  }, ['/workspace', '/workspace/team'])
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+  // The active workspace is now the new team; show its settings.
+  redirect('/workspace/team?created=1')
 }
 
 export async function renameTeamAction(_: ActionState, fd: FormData): Promise<ActionState> {

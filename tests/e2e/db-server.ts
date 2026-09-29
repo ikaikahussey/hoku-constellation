@@ -32,7 +32,9 @@ async function main() {
   await db.exec(readMigrations())
   await db.exec(SEED_SQL)
   const port = Number(process.env.E2E_PG_PORT ?? 54329)
-  const server = new PGLiteSocketServer({ db, port, host: '127.0.0.1', inspect: process.env.E2E_PG_INSPECT === '1' })
+  // The app pool uses one connection, but a recycled connection can reconnect before the old handler
+  // is released; allow a few so that race is not rejected as "Too many connections".
+  const server = new PGLiteSocketServer({ db, port, host: '127.0.0.1', inspect: process.env.E2E_PG_INSPECT === '1', maxConnections: 8 })
   await server.start()
   console.log(`[e2e-db] PGlite listening on 127.0.0.1:${port}`)
   const stop = async () => { await server.stop(); await db.close(); process.exit(0) }

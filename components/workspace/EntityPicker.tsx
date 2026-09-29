@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 
 interface Hit { id: string; kind: string; name: string; subtitle: string | null }
 
@@ -23,7 +23,7 @@ export function EntityPicker({ name = 'value', kind, label = 'Search', placehold
     }, 200)
     return () => { clearTimeout(t); ctl.abort() }
   }, [q, kind, active])
-  const id = `picker-${name}`
+  const id = `picker-${useId().replace(/:/g, '')}`
   return (
     <div className="relative">
       <label htmlFor={id} className="block text-sm font-bold mb-1">{label}</label>

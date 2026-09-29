@@ -4,6 +4,7 @@ import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
 import { SearchBar } from '@/components/search/SearchBar'
 import { buttonClass } from '@/components/ui/Button'
+import { PRICING, formatUsd } from '@/lib/billing/plans'
 
 export default function HomePage() {
   return (
@@ -76,23 +77,23 @@ export default function HomePage() {
 
         <section className="border-b border-rule">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-            <h2 className="text-3xl font-bold mb-2">Simple pricing</h2>
-            <p className="text-muted mb-8">Free to search. Subscribe for full access to Hawaiʻi&apos;s most comprehensive power-mapping database.</p>
+            <h2 className="text-3xl font-bold mb-2">Pricing</h2>
+            <p className="text-muted mb-8">Free to search. Reader for the full record; Pro for legislative tracking, alerts, and client reports.</p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="border border-rule p-6">
-                <h3 className="font-bold mb-1">Free</h3>
-                <p className="text-3xl font-bold mb-3 tabular">$0</p>
-                <p className="text-sm text-muted">Search and browse basic profiles</p>
+                <h3 className="font-bold mb-1">{PRICING.plans.reader.name}</h3>
+                <p className="text-3xl font-bold mb-3 tabular">{formatUsd(PRICING.plans.reader.prices.month!.amount)}<span className="text-sm font-normal text-muted">/mo</span></p>
+                <p className="text-sm text-muted">{PRICING.plans.reader.tagline}</p>
               </div>
               <div className="border border-ink p-6">
-                <h3 className="font-bold mb-1">Individual</h3>
-                <p className="text-3xl font-bold mb-3 tabular">$9.99<span className="text-sm font-normal text-muted">/mo</span></p>
-                <p className="text-sm text-muted">Full profiles, finance data, relationship graphs</p>
+                <h3 className="font-bold mb-1">{PRICING.plans.pro.name}</h3>
+                <p className="text-3xl font-bold mb-3 tabular">{formatUsd(PRICING.plans.pro.prices.year!.amount)}<span className="text-sm font-normal text-muted">/yr per seat</span></p>
+                <p className="text-sm text-muted">{PRICING.plans.pro.tagline}</p>
               </div>
               <div className="border border-rule p-6">
-                <h3 className="font-bold mb-1">Professional</h3>
-                <p className="text-3xl font-bold mb-3 tabular">$29.99<span className="text-sm font-normal text-muted">/mo</span></p>
-                <p className="text-sm text-muted">API access, CSV exports, email alerts</p>
+                <h3 className="font-bold mb-1">{PRICING.plans.organization.name}</h3>
+                <p className="text-3xl font-bold mb-3">Custom</p>
+                <p className="text-sm text-muted">{PRICING.plans.organization.tagline}</p>
               </div>
             </div>
             <p className="mt-6 text-sm"><Link href="/pricing">View full pricing details &rarr;</Link></p>

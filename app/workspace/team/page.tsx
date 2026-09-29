@@ -1,4 +1,5 @@
 import { requireWorkspace } from '@/lib/workspace'
+import { isoString } from '@/lib/format'
 import { listMembers, seatsUsed } from '@/lib/teams'
 import { ActionForm } from '@/components/workspace/ActionForm'
 import { Badge } from '@/components/ui/Badge'
@@ -28,7 +29,7 @@ export default async function TeamPage() {
             <tr key={m.user_id} className="border-b border-rule">
               <td className="py-2" data-ph-mask>{m.email ?? m.user_id}{m.user_id === ws.user.id && ' (you)'}</td>
               <td className="py-2"><Badge variant={m.role === 'owner' ? 'solid' : 'outline'}>{m.role}</Badge></td>
-              <td className="py-2 tabular">{m.joined_at?.slice(0, 10)}</td>
+              <td className="py-2 tabular">{isoString(m.joined_at).slice(0, 10)}</td>
               <td className="py-2">
                 {ws.isAdmin && m.role !== 'owner' && m.user_id !== ws.user.id && (
                   <span className="flex gap-3 justify-end">

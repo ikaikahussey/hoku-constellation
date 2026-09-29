@@ -15,7 +15,7 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
     <>
       <Header signedIn />
       <div className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 flex flex-col md:flex-row gap-8">
-        <aside className="md:w-56 flex-shrink-0 space-y-4">
+        <aside className="md:w-56 flex-shrink-0 space-y-4" data-team-id={ws.team.id}>
           <form action={switchTeam} className="space-y-1">
             <label htmlFor="team-switch" className="block text-xs font-bold uppercase tracking-wide">Team</label>
             <select id="team-switch" name="team_id" defaultValue={ws.team.id} className="block w-full border border-ink bg-paper px-2 py-1 text-sm">

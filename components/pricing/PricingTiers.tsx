@@ -48,7 +48,7 @@ export function PricingTiers({ tiers, defaultInterval = 'yearly' }: { tiers: Tie
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {tiers.map(tier => {
           const price = interval === 'yearly' && tier.yearly ? tier.yearly : tier.monthly
-          const period = tier.id === 'free' ? '' : interval === 'yearly' && tier.yearly ? '/yr' : '/mo'
+          const period = tier.id === 'free' || price === 'Custom' ? '' : interval === 'yearly' && tier.yearly ? '/yr' : '/mo'
           const href = tier.href ?? (tier.id === 'free' ? '/auth/signup' : `/workspace/billing?plan=${tier.id}&interval=${interval === 'yearly' ? 'year' : 'month'}`)
           return (
             <div key={tier.id} className={`p-6 flex flex-col border ${tier.highlighted ? 'border-ink border-2' : 'border-rule'}`}>

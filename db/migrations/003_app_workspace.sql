@@ -58,6 +58,8 @@ create table if not exists app.team_member (
   primary key (team_id, user_id)
 );
 create index if not exists team_member_user_idx on app.team_member(user_id);
+-- One personal workspace per user (created on first visit; concurrent renders must not create two).
+create unique index if not exists team_personal_owner_idx on app.team(created_by) where is_personal;
 create unique index if not exists team_one_owner_idx on app.team_member(team_id) where role = 'owner' and removed_at is null;
 
 create table if not exists app.invitation (
