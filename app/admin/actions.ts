@@ -74,6 +74,7 @@ function entityPayloadFromForm(kind: EntityKind, fd: FormData) {
         website_url: optional(fd, 'website_url'),
         status: optional(fd, 'status') ?? 'active',
         is_featured: bool(fd, 'is_featured'),
+        is_priority: bool(fd, 'is_priority'),
         visibility: visibility(fd),
       },
     }
@@ -98,6 +99,7 @@ function entityPayloadFromForm(kind: EntityKind, fd: FormData) {
         website_url: optional(fd, 'website_url'),
         status: optional(fd, 'status') ?? 'active',
         is_featured: bool(fd, 'is_featured'),
+        is_priority: bool(fd, 'is_priority'),
         visibility: visibility(fd),
       },
     }

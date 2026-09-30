@@ -79,10 +79,48 @@ export async function getEdgeTotals(db: Db, entityId: string): Promise<EdgeTotal
 }
 
 /** Edges awaiting review (admin match queue). */
-export async function listReviewEdges(db: Db, opts: { limit?: number; offset?: number; type?: string } = {}): Promise<EdgeWithEnds[]> {
-  const params: unknown[] = []
+export interface ReviewPriority {
+  /** Priority entity ids: edges already linked to one of them on either side. */
+  ids: string[]
+  /** Normalized priority names (lib/import/priority targetNames): unresolved raw names similar to one of them. */
+  names: string[]
+}
+
+/** Trigram similarity at or above which an unresolved raw name counts as a priority name (word order ignored). */
+export const PRIORITY_NAME_SIMILARITY = 0.6
+
+function reviewWhere(opts: { type?: string; priority?: ReviewPriority; priorityOnly?: boolean }, params: unknown[], needRank: boolean): { where: string; rank: string } {
   let where = `e.match_status <> 'matched'`
   if (opts.type) { params.push(opts.type); where += ` and e.type = $${params.length}` }
+  let rank = 'false'
+  // Bind the priority arrays only when the statement references them (Postgres rejects unused parameters).
+  if (opts.priority && (opts.priority.ids.length || opts.priority.names.length) && (needRank || opts.priorityOnly)) {
+    params.push(opts.priority.ids, opts.priority.names)
+    const ids = `$${params.length - 1}::uuid[]`, names = `$${params.length}::text[]`
+    rank = `coalesce(e.from_id = any(${ids}) or e.to_id = any(${ids})
+      or exists (select 1 from unnest(${names}) p(n)
+                  where (e.from_id is null and similarity(lower(coalesce(e.from_name_raw, '')), p.n) >= ${PRIORITY_NAME_SIMILARITY})
+                     or (e.to_id is null and similarity(lower(coalesce(e.to_name_raw, '')), p.n) >= ${PRIORITY_NAME_SIMILARITY})), false)`
+    if (opts.priorityOnly) where += ` and ${rank}`
+  }
+  return { where, rank }
+}
+
+/**
+ * Edges with an unresolved side. Edges touching a priority entity (linked, or an unresolved raw name
+ * similar to one of its names) come first; then highest amounts.
+ */
+export async function listReviewEdges(db: Db, opts: { limit?: number; offset?: number; type?: string; priority?: ReviewPriority; priorityOnly?: boolean } = {}): Promise<Array<EdgeWithEnds & { is_priority: boolean }>> {
+  const params: unknown[] = []
+  const { where, rank } = reviewWhere(opts, params, true)
   params.push(Math.min(opts.limit ?? 50, 500), opts.offset ?? 0)
-  return db.many<EdgeWithEnds>(`${SELECT} where ${where} order by e.amount desc nulls last, e.id limit $${params.length - 1} offset $${params.length}`, params)
+  return db.many<EdgeWithEnds & { is_priority: boolean }>(
+    `select * from (${SELECT.replace(/^\s*select /i, `select ${rank} as is_priority, `)} where ${where}) q
+      order by q.is_priority desc, q.amount desc nulls last, q.id limit $${params.length - 1} offset $${params.length}`, params)
+}
+
+export async function countReviewEdges(db: Db, opts: { type?: string; priority?: ReviewPriority; priorityOnly?: boolean } = {}): Promise<number> {
+  const params: unknown[] = []
+  const { where } = reviewWhere(opts, params, false)
+  return Number((await db.one<{ n: string }>(`select count(*)::text n from edge e where ${where}`, params))?.n ?? 0)
 }

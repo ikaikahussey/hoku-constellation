@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { getServiceDb } from '@/lib/db/service'
-import { listReviewEdges, type EdgeWithEnds } from '@/lib/db/queries'
+import { listReviewEdges, countReviewEdges, type EdgeWithEnds } from '@/lib/db/queries'
+import { listPriorityTargets, targetNames } from '@/lib/import/priority'
 import { fuzzyMatch } from '@/lib/entity-match'
 import { EDGE_TYPES } from '@/lib/schema/attributes'
 import { MatchReviewActions, type Candidate } from '@/components/admin/MatchReviewActions'
@@ -30,18 +31,21 @@ function ResolvedEnd({ id, name, kind }: { id: string | null; name: string | nul
   return <Link href={adminEntityHref(kind, id)}>{name ?? id}</Link>
 }
 
-export default async function MatchReview({ searchParams }: { searchParams: Promise<{ type?: string; page?: string }> }) {
+export default async function MatchReview({ searchParams }: { searchParams: Promise<{ type?: string; page?: string; priority?: string }> }) {
   const params = await searchParams
   const type = params.type && (EDGE_TYPES as readonly string[]).includes(params.type) ? params.type : undefined
   const page = Math.max(1, parseInt(params.page || '1', 10) || 1)
   const offset = (page - 1) * PER_PAGE
+  const priorityOnly = params.priority === '1'
 
   const db = await getServiceDb()
-  const [edges, pending] = await Promise.all([
-    listReviewEdges(db, { limit: PER_PAGE, offset, type }),
-    db.one<{ n: string }>(`select count(*)::text n from edge where match_status <> 'matched'${type ? ' and type = $1' : ''}`, type ? [type] : []),
+  const targets = await listPriorityTargets(db)
+  const priority = { ids: targets.map(t => t.id), names: targets.flatMap(targetNames) }
+  const [edges, total, priorityTotal] = await Promise.all([
+    listReviewEdges(db, { limit: PER_PAGE, offset, type, priority, priorityOnly }),
+    countReviewEdges(db, { type, priority, priorityOnly }),
+    targets.length ? countReviewEdges(db, { type, priority, priorityOnly: true }) : Promise.resolve(0),
   ])
-  const total = Number(pending?.n ?? 0)
 
   // Fuzzy candidates for every unresolved side, in parallel.
   const sides = edges.flatMap(e => {
@@ -56,6 +60,7 @@ export default async function MatchReview({ searchParams }: { searchParams: Prom
   const qs = (p: number) => {
     const u = new URLSearchParams()
     if (type) u.set('type', type)
+    if (priorityOnly) u.set('priority', '1')
     if (p > 1) u.set('page', String(p))
     const s = u.toString()
     return s ? `/admin/match-review?${s}` : '/admin/match-review'
@@ -67,8 +72,13 @@ export default async function MatchReview({ searchParams }: { searchParams: Prom
         <div>
           <h1 className="text-2xl font-bold">Match review</h1>
           <p className="text-sm text-muted mt-1">
-            {total.toLocaleString()} edge{total === 1 ? '' : 's'} with an unresolved side. Highest amounts first. Link a side to an entity, or mark it unmatched to clear the review flag.
+            {total.toLocaleString()} edge{total === 1 ? '' : 's'} with an unresolved side. Priority entities first, then highest amounts. Link a side to an entity, or mark it unmatched to clear the review flag.
           </p>
+          {targets.length > 0 && (
+            <p className="text-sm text-muted mt-1">
+              Priority: {targets.map((t, i) => <span key={t.id}>{i > 0 && ', '}<Link href={adminEntityHref(t.kind, t.id)}>{t.name}</Link></span>)} · {priorityTotal.toLocaleString()} to review
+            </p>
+          )}
         </div>
         <form className="flex gap-2 items-end">
           <label className="text-sm">
@@ -78,6 +88,12 @@ export default async function MatchReview({ searchParams }: { searchParams: Prom
               {EDGE_TYPES.map(t => <option key={t} value={t}>{humanize(t)}</option>)}
             </select>
           </label>
+          {targets.length > 0 && (
+            <label className="text-sm flex items-center gap-2 pb-2">
+              <input type="checkbox" name="priority" value="1" defaultChecked={priorityOnly} className="h-4 w-4 border border-ink accent-ink" />
+              Priority only
+            </label>
+          )}
           <button type="submit" className={buttonClass('secondary', 'sm')}>Filter</button>
         </form>
       </div>
@@ -90,7 +106,8 @@ export default async function MatchReview({ searchParams }: { searchParams: Prom
             <li key={e.id} className="card bg-paper border border-rule p-4">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div className="text-sm space-y-1">
-                  <p><span className="text-xs font-bold uppercase tracking-wide border border-ink px-1.5 py-0.5 mr-2">{humanize(e.type)}</span>
+                  <p>{e.is_priority && <span className="text-xs font-bold uppercase tracking-wide bg-ink text-paper px-1.5 py-0.5 mr-2">Priority</span>}
+                    <span className="text-xs font-bold uppercase tracking-wide border border-ink px-1.5 py-0.5 mr-2">{humanize(e.type)}</span>
                     <span className="text-xs text-muted">{e.match_status}{e.match_confidence !== null ? ` · best ${Math.round(e.match_confidence * 100)}%` : ''}</span></p>
                   <p><span className="text-muted">From:</span> <span className="font-bold">{e.from_name_raw ?? '—'}</span>{e.from_id && <> → <ResolvedEnd id={e.from_id} name={e.from_name} kind={e.from_kind} /></>}</p>
                   <p><span className="text-muted">To:</span> <span className="font-bold">{e.to_name_raw ?? '—'}</span>{e.to_id && <> → <ResolvedEnd id={e.to_id} name={e.to_name} kind={e.to_kind} /></>}</p>

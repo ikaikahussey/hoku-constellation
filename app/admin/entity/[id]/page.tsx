@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic'
 const KIND_LABEL: Record<string, string> = { org: 'Organization', bill: 'Bill', docket: 'Docket', parcel: 'Parcel', office: 'Office', person: 'Person' }
 const LIST_HREF: Record<string, string | undefined> = { org: '/admin/org', person: '/admin/person' }
 const ORDER: Record<string, string[]> = {
-  org: ['slug', 'org_type', 'sector', 'island', 'status', 'visibility', 'is_featured', 'website_url', 'city', 'state', 'registration_status'],
+  org: ['slug', 'org_type', 'sector', 'island', 'status', 'visibility', 'is_featured', 'is_priority', 'website_url', 'city', 'state', 'registration_status'],
   bill: ['measure_number', 'session', 'chamber', 'title', 'current_status', 'introduced_date', 'measure_type', 'jurisdiction'],
   docket: ['docket_number', 'agency', 'title', 'docket_type', 'docket_status', 'filed_date', 'decision_date', 'utility_type'],
   parcel: ['tmk', 'county', 'address', 'tax_class', 'assessed_value', 'assessment_year', 'land_area_sqft'],
