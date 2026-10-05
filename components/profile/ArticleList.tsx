@@ -15,7 +15,8 @@ export function ArticleList({ articles }: ArticleListProps) {
     <ul className="divide-y divide-rule">
       {articles.map(article => {
         const title = article.title ?? 'Untitled'
-        const source = article.source.replace(/_/g, ' ')
+        const outletName = article.raw?.outlet_name
+        const source = typeof outletName === 'string' ? outletName : article.source.replace(/_/g, ' ')
         return (
           <li key={article.id} className="py-4">
             <div className="flex items-start justify-between gap-4">

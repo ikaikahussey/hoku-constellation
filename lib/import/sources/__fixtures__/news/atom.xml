@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Example Island News</title>
+  <entry>
+    <title type="html">Office of Hawaiian Affairs Trustees Approve Budget</title>
+    <link rel="alternate" href="https://news.example.org/oha-budget"/>
+    <id>tag:news.example.org,2026:oha-budget</id>
+    <published>2026-07-01T09:30:00-10:00</published>
+    <author><name>Kai Writer</name></author>
+    <category term="OHA"/>
+    <summary type="html">&lt;p&gt;The Office of Hawaiian Affairs board voted 7-2.&lt;/p&gt;</summary>
+  </entry>
+</feed>

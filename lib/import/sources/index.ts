@@ -22,6 +22,7 @@ export const IMPORTERS: Record<string, () => Promise<SourceModule>> = {
   property_hnl: () => import('./property-hnl'),
   employee_compensation: () => import('./employee-compensation'),
   dcca_breg: () => import('./dcca-breg'),
+  news: () => import('./news'),
 }
 
 export const LIVE_SOURCE_KEYS = Object.keys(IMPORTERS)

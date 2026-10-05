@@ -42,7 +42,7 @@ export async function getDocumentByChecksum(db: Db, checksum: string): Promise<D
 
 /** Articles (editorial documents) mentioning an entity. */
 export async function getArticlesForEntity(db: Db, entityId: string, limit = 20): Promise<DocumentForEntity[]> {
-  return getDocumentsForEntity(db, entityId, { docTypes: ['article'], limit })
+  return getDocumentsForEntity(db, entityId, { docTypes: ['article'], limit, includeRaw: true })
 }
 
 /** Timeline events for an entity, newest first. */

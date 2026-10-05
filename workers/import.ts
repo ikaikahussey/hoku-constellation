@@ -18,6 +18,8 @@ export async function runWorker(source: string, argv = process.argv.slice(2)): P
   try {
     const mod = await loadImporter(source)
     const summary = await runImporter(db, source, mod.importBatch, {
+      // Snapshot sources (e.g. news feeds) start over once the previous run completed.
+      restartIfComplete: def.restartOnComplete === true,
       ...args, log: (m) => log(`[${source}] ${m}`),
       // E2: match new documents/edges against alert rules as soon as each batch commits.
       onBatchCommitted: async () => {
