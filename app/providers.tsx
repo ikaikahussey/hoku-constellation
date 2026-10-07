@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from 'next/navigation'
 import posthog from 'posthog-js'
 import { PostHogProvider } from 'posthog-js/react'
 import { SpeedInsights } from '@vercel/speed-insights/next'
+import { Analytics } from '@vercel/analytics/next'
 import { identifyUser, resetAnalytics } from '@/lib/analytics-events'
 
 const KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY
@@ -70,13 +71,14 @@ function IdentitySync({ identity }: { identity: AnalyticsIdentity | null }) {
 
 export function Providers({ children, identity = null }: { children: ReactNode; identity?: AnalyticsIdentity | null }) {
   initPostHog()
-  if (!KEY) return <>{children}<SpeedInsights /></>
+  if (!KEY) return <>{children}<SpeedInsights /><Analytics /></>
   return (
     <PostHogProvider client={posthog}>
       <PageviewTracker />
       <IdentitySync identity={identity} />
       {children}
       <SpeedInsights />
+      <Analytics />
     </PostHogProvider>
   )
 }
