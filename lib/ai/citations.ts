@@ -45,7 +45,7 @@ export function assignHandles(facts: Fact[]): { facts: Array<Fact & { handle: st
   return { facts: out, byHandle }
 }
 
-const ABBREV = /\b(No|Nos|Rep|Reps|Sen|Stand|Com|Conf|Inc|Co|Corp|Ltd|Dept|St|Mr|Ms|Mrs|Dr|U\.S|H\.B|S\.B|v|vs|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\./g
+const ABBREV = /\b(No|Nos|Rep|Reps|Sen|Gov|Lt|Gen|Atty|Hon|Capt|Sgt|Supt|Stand|Com|Conf|Inc|Co|Corp|Ltd|Dept|St|Mr|Ms|Mrs|Dr|U\.S|H\.B|S\.B|v|vs|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\./g
 
 /**
  * Segment prose into sentences, keeping any [D1]-style markers that follow a sentence attached to it.

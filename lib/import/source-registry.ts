@@ -10,6 +10,7 @@
  *   retired  — source decommissioned (kept for provenance)
  */
 import type { DocType, EdgeType, EntityKind } from '@/lib/schema/attributes'
+import { NEWS_OUTLETS } from '@/lib/news/outlets'
 
 export type AccessMethod = 'api' | 'ckan' | 'socrata' | 'legistar' | 'bulk_download' | 'html' | 'pdf' | 'rss' | 'manual_uipa'
 export type Cadence = 'hourly' | 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual' | 'on_demand'
@@ -330,6 +331,14 @@ export const SOURCE_REGISTRY: SourceDefinition[] = [
     key: 'jsc', name: 'Judicial Selection Commission — nominee lists', agency: 'Judicial Selection Commission',
     jurisdiction: 'state', accessMethod: 'html', baseUrl: 'https://www.courts.state.hi.us/judicial_selection_commission',
     docTypes: ['appointment'], edgeTypes: ['appointed_to'], entityKinds: ['person', 'office'], cadence: 'monthly', tier: 2, status: 'planned',
+  },
+  {
+    key: 'news', name: 'Hawaiʻi news outlets — RSS/Atom feeds (aggregator)', agency: 'Hawaiʻi news media (lib/news/outlets.ts)',
+    jurisdiction: 'state', accessMethod: 'rss', baseUrl: 'https://www.civilbeat.org',
+    urls: NEWS_OUTLETS.filter(o => o.enabled).flatMap(o => o.feeds),
+    docTypes: ['article'], edgeTypes: ['mentioned_in'], entityKinds: ['person', 'org', 'office', 'bill', 'docket'],
+    cadence: 'hourly', tier: 2, status: 'live', restartOnComplete: true,
+    notes: 'Feeds only; article pages are never fetched. Tags existing entities, never creates them. Summaries by lib/news/summarize.ts (cron /api/cron/news).',
   },
   // ============================================================ Tier 2 — Federal
   {
