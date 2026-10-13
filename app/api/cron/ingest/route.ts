@@ -14,7 +14,7 @@ import { getServiceDb } from '@/lib/db/service'
 import { authenticateCron } from '@/app/api/analytics/_lib/auth'
 import { runImporter } from '@/lib/import/run'
 import { loadImporter, LIVE_SOURCE_KEYS } from '@/lib/import/sources'
-import { selectDueSources } from '@/lib/import/schedule'
+import { selectDueSources, CRON_BATCH_SIZE } from '@/lib/import/schedule'
 import { runAlertPipeline } from '@/lib/alerts'
 import { runPriorityPassIfDue } from '@/lib/import/priority'
 
@@ -57,7 +57,7 @@ async function handle(request: NextRequest) {
     try {
       const mod = await loadImporter(def.key)
       const summary = await runImporter(db, def.key, mod.importBatch, {
-        batchSize: 500, deadlineMs: Math.min(deadline, Date.now() + slice), restartIfComplete: def.restartOnComplete === true, log: m => { if (logs.length < 20) logs.push(m) },
+        batchSize: CRON_BATCH_SIZE, deadlineMs: Math.min(deadline, Date.now() + slice), restartIfComplete: def.restartOnComplete === true, log: m => { if (logs.length < 20) logs.push(m) },
         onBatchCommitted: async () => { await runAlertPipeline(db) },
       })
       results.push({ source: def.key, ok: true, documents: summary.documents, edges: summary.edges, entitiesCreated: summary.entitiesCreated, errors: summary.errors, nextOffset: summary.nextOffset, done: summary.done, batches: summary.batches })

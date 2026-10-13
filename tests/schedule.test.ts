@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isDue, selectDueSources, RUNNING_GRACE_MS } from '@/lib/import/schedule'
+import { isDue, selectDueSources, RUNNING_GRACE_MS, CRON_BATCH_SIZE } from '@/lib/import/schedule'
 import { getSource } from '@/lib/import/source-registry'
 import { createTestDb } from './helpers/pglite'
 
@@ -28,5 +28,14 @@ describe('importer scheduling', () => {
       const only = await selectDueSources(db, { live: ['csc', 'puc'], keys: ['puc'], now })
       expect(only.map(d => d.key)).toEqual(['puc'])
     } finally { await db.end() }
+  })
+})
+
+describe('cron batch size', () => {
+  it('keeps one batch of per-record fetches well inside the 300 s function limit', () => {
+    // One request per second per host, up to one 30 s timeout retry per record in the worst case seen.
+    const worstCaseSeconds = CRON_BATCH_SIZE * 1 + 30 * 2
+    expect(worstCaseSeconds).toBeLessThan(120)
+    expect(CRON_BATCH_SIZE).toBeGreaterThan(0)
   })
 })

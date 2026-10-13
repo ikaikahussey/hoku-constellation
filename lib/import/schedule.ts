@@ -22,6 +22,14 @@ export const CADENCE_MS: Record<Cadence, number | null> = {
 
 export const RUNNING_GRACE_MS = 6 * 60_000
 
+/**
+ * Records per batch when importers run inside the serverless cron. The time budget is only checked
+ * between batches, and sources that fetch one page per record run at about one request per second,
+ * so a batch must finish well inside the function limit or it is killed before its cursor commits
+ * and the same batch is retried forever. 25 records ≈ 25–60 s even with retries.
+ */
+export const CRON_BATCH_SIZE = 25
+
 export interface CursorState { source: string; cursor_offset: number; status: string | null; last_run_at: string | null }
 
 export function isDue(def: SourceDefinition, cursor: CursorState | undefined, now = Date.now()): boolean {
