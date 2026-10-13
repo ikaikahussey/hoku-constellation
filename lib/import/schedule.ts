@@ -22,6 +22,14 @@ export const CADENCE_MS: Record<Cadence, number | null> = {
 
 export const RUNNING_GRACE_MS = 6 * 60_000
 
+/**
+ * Records per batch when importers run inside the serverless cron. The time budget is only checked
+ * between batches, and sources that fetch one page per record run at about one request per second,
+ * so a batch must finish well inside the function limit or it is killed before its cursor commits
+ * and the same batch is retried forever. 25 records ≈ 25–60 s even with retries.
+ */
+export const CRON_BATCH_SIZE = 25
+
 export interface CursorState { source: string; cursor_offset: number; status: string | null; last_run_at: string | null }
 
 export function isDue(def: SourceDefinition, cursor: CursorState | undefined, now = Date.now()): boolean {
@@ -35,13 +43,23 @@ export function isDue(def: SourceDefinition, cursor: CursorState | undefined, no
   return now - last >= interval
 }
 
-/** Live sources that are due now, in registry order (Tier 1 first), restricted to `keys` when given. */
+/**
+ * Live sources that are due now, restricted to `keys` when given. Order: never-run sources first, then
+ * least recently run, ties in registry order (Tier 1 first). A cron tick only reaches the first few
+ * sources, so ordering by last run keeps a slow or failing source at the head of the registry from
+ * starving the ones after it.
+ */
 export async function selectDueSources(db: Db, opts: { keys?: string[]; live?: string[]; now?: number } = {}): Promise<SourceDefinition[]> {
   const now = opts.now ?? Date.now()
   const cursors = await db.many<CursorState>(`select source, cursor_offset, status, last_run_at::text last_run_at from import_cursor`)
   const byKey = new Map(cursors.map(c => [c.source, c]))
+  const lastRun = (key: string) => {
+    const t = byKey.get(key)?.last_run_at
+    return t ? new Date(t).getTime() : -Infinity
+  }
   return SOURCE_REGISTRY
     .filter(s => (opts.live ? opts.live.includes(s.key) : true))
     .filter(s => (opts.keys ? opts.keys.includes(s.key) : true))
     .filter(s => isDue(s, byKey.get(s.key), now))
+    .sort((a, b) => lastRun(a.key) - lastRun(b.key))
 }
