@@ -1,10 +1,15 @@
 /**
  * Boards & Commissions — appointments (boards.hawaii.gov).
  *
- * The site lists every state board/commission with its current members, seat descriptions and term
- * expirations. Each board page becomes one `appointment` document per fetch (checksummed, so unchanged
- * rosters do not create new documents). Members become `appointed_to` edges from person → office
- * (kind='office', office_type='board' | 'commission'), role = seat/title, end_date = term expiration.
+ * The site is a WordPress multisite: each state board or commission is a subsite at /<slug>/ with its
+ * own sitemap, and the root sitemap index (/sitemap.xml) lists every subsite sitemap. The old /boards/
+ * index page is gone (HTTP 404, Oct 2026). Each run reads the sitemap index for the board list, then
+ * for each board its home page plus up to two roster pages linked from it (members, commissioners, …).
+ *
+ * Each board becomes one `appointment` document per fetch (checksummed, so unchanged rosters do not
+ * create new documents). Members become `appointed_to` edges from person → office (kind='office',
+ * office_type='board' | 'commission'), role = seat/title, end_date = term expiration. A board whose
+ * pages name no members is skipped (counted as seen), so no empty office is created.
  */
 import type { Db } from '@/lib/db/types'
 import { fetchText } from '../http'
@@ -12,6 +17,7 @@ import { processRecord, emptyResult, resolveRef, type BatchResult, type EdgeInpu
 import { cleanName, canonicalPersonName, toIsoDate } from '../normalize'
 import type { ImportOptions, SourcePage } from '../types'
 import { load } from 'cheerio'
+import { sitemapLocs } from '../probe'
 
 export const SOURCE_KEY = 'boards'
 export const BASE = 'https://boards.hawaii.gov'
@@ -31,6 +37,53 @@ export function parseBoardIndex(html: string): Array<{ name: string; url: string
     if (!out.has(url)) out.set(url, name)
   })
   return [...out].map(([url, name]) => ({ name, url }))
+}
+
+/** Board subsites from the root sitemap index: https://boards.hawaii.gov/<slug>/sitemap.xml → /<slug>/. */
+export function parseBoardSitemapIndex(xml: string): Array<{ slug: string; url: string }> {
+  const out = new Map<string, string>()
+  for (const loc of sitemapLocs(xml)) {
+    const m = loc.match(/^https?:\/\/boards\.hawaii\.gov\/([a-z0-9-]+)\/sitemap\.xml$/i)
+    if (!m || /^(master-child|wp-[a-z-]+)$/i.test(m[1])) continue
+    out.set(m[1], `${BASE}/${m[1]}/`)
+  }
+  return [...out].map(([slug, url]) => ({ slug, url }))
+}
+
+/** The board's own name on its subsite home page (site name, not the page title). */
+export function boardName(html: string, fallback: string): string {
+  const $ = load(html)
+  const site = cleanName($('meta[property="og:site_name"]').attr('content'))
+    ?? cleanName($('.site-title, #site-title').first().text())
+    ?? cleanName($('title').first().text().split(/\s+[–|-]\s+/).pop())
+  return site && !/^boards and commissions$/i.test(site) ? site : fallback
+}
+
+const ROSTER_RE = /member|roster|commissioner|composition|board-of-directors|our-board|directors|trustees/i
+
+/** Links on a subsite page that likely list the members (same subsite only, max 2). */
+export function rosterLinks(html: string, homeUrl: string): string[] {
+  const $ = load(html)
+  const home = new URL(homeUrl)
+  const out = new Set<string>()
+  $('a[href]').each((_, a) => {
+    let u: URL
+    try { u = new URL($(a).attr('href') ?? '', homeUrl) } catch { return }
+    u.hash = ''
+    if (u.host !== home.host || !u.pathname.startsWith(home.pathname) || u.pathname === home.pathname) return
+    if (/\.(pdf|docx?|jpg|png)$/i.test(u.pathname)) return
+    if (ROSTER_RE.test(u.pathname) || ROSTER_RE.test($(a).text())) out.add(u.toString())
+  })
+  return [...out].slice(0, 2)
+}
+
+const NOT_A_NAME = /\b(meeting|agenda|minutes|notice|report|board|commission|council|committee|department|office|application|apply|vacanc|contact|calendar|archive|policy|rules|statute|news|home|about|page|chair(person)?|member)s?\b/i
+
+/** Two to five capitalized words, optionally with initials and a suffix: a plausible person name. */
+export function looksLikePersonName(n: string): boolean {
+  if (NOT_A_NAME.test(n)) return false
+  const words = n.replace(/,?\s+(jr|sr|ii|iii|iv)\.?$/i, '').split(/\s+/)
+  return words.length >= 2 && words.length <= 5 && words.every(w => /^[A-ZʻĀĒĪŌŪ][A-Za-zʻāēīōūĀĒĪŌŪ'.-]*$/.test(w))
 }
 
 export function parseBoardPage(html: string, url: string, fallbackName: string): BoardPage {
@@ -59,7 +112,7 @@ export function parseBoardPage(html: string, url: string, fallbackName: string):
       const m = t.match(/^([A-Z][A-Za-zʻ'\-. ]{2,60})\s*[—–\-|,]\s*(.*?)(?:\(?\s*(?:Term\s+)?(?:Expires?|Ends?|through|to)\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d{2}-\d{2})\)?)?$/i)
       if (!m) return
       const n = cleanName(m[1])
-      if (!n || /^vacant$/i.test(n)) return
+      if (!n || /^vacant$/i.test(n) || !looksLikePersonName(n)) return
       members.push({ name: n, seat: cleanName(m[2]) ?? null, termEnds: toIsoDate(m[3]), appointedBy: null })
     })
   }
@@ -77,16 +130,30 @@ export async function importBatch(db: Db, offset: number, batchSize: number, opt
   if (opts.pageSource) {
     page = (await opts.pageSource(offset, batchSize, params)) as unknown as SourcePage<BoardPage>
   } else {
-    const index = parseBoardIndex(await fetchText(params.index ?? `${BASE}/boards/`))
+    const index = parseBoardSitemapIndex(await fetchText(params.index ?? `${BASE}/sitemap.xml`))
     const slice = index.slice(offset, offset + batchSize)
     const records: BoardPage[] = []
     for (const b of slice) {
-      try { records.push(parseBoardPage(await fetchText(b.url), b.url, b.name)) } catch (e) { result.errors++; log(`${b.name}: ${(e as Error).message}`) }
+      try {
+        const homeHtml = await fetchText(b.url)
+        const board = parseBoardPage(homeHtml, b.url, boardName(homeHtml, b.slug))
+        board.name = boardName(homeHtml, board.name)
+        const seen = new Set(board.members.map(m => m.name))
+        for (const link of rosterLinks(homeHtml, b.url)) {
+          try {
+            for (const m of parseBoardPage(await fetchText(link), link, board.name).members) if (!seen.has(m.name)) { seen.add(m.name); board.members.push(m) }
+          } catch (e) { log(`${b.slug} ${link}: ${(e as Error).message}`) }
+        }
+        records.push(board)
+      } catch (e) { result.errors++; log(`${b.slug}: ${(e as Error).message}`) }
     }
     page = { records, total: index.length, done: offset + slice.length >= index.length }
+    // Boards whose pages failed still advance the cursor; they are read again on the next weekly pass.
+    result.nextOffset = offset + slice.length
   }
 
   for (const b of page.records) {
+    if (!b.members.length) { result.seen++; log(`${b.name}: no members found on ${b.url}`); continue }
     try {
       await processRecord(db, {
         document: {
@@ -108,7 +175,7 @@ export async function importBatch(db: Db, offset: number, batchSize: number, opt
       }, result)
     } catch (e) { result.errors++; log(`${b.name}: ${(e as Error).message}`) }
   }
-  result.nextOffset = offset + page.records.length
+  if (opts.pageSource) result.nextOffset = offset + page.records.length
   result.done = page.done ?? page.records.length < batchSize
   return result
 }

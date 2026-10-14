@@ -25,14 +25,14 @@ describe('importer scheduling', () => {
     try {
       await db.query(`insert into import_cursor (source, cursor_offset, status, last_run_at) values ('csc', 5000, 'complete', $1), ('fec', 100, 'running', $2), ('boards', 0, 'complete', $3)`,
         [iso(3600_000), iso(60_000), iso(8 * 24 * 3600_000)])
-      const due = await selectDueSources(db, { live: ['csc', 'fec', 'boards', 'puc'], now })
-      expect(due.map(d => d.key)).toEqual(['puc', 'boards']) // csc fresh, fec owned by another tick; puc never run goes before boards (weekly elapsed)
+      const due = await selectDueSources(db, { live: ['csc', 'fec', 'boards', 'spo_hands', 'puc'], now })
+      expect(due.map(d => d.key)).toEqual(['spo_hands', 'boards']) // csc fresh, fec owned by another tick, puc paused; spo_hands never run goes before boards (weekly elapsed)
       // A source stuck at the head of the registry does not starve one that has never run.
       await db.query(`insert into import_cursor (source, cursor_offset, status, last_run_at) values ('capitol_testimony', 0, 'error', $1)`, [iso(1000)])
       const fair = await selectDueSources(db, { live: ['capitol_testimony', 'news'], now })
       expect(fair.map(d => d.key)).toEqual(['news', 'capitol_testimony'])
-      const only = await selectDueSources(db, { live: ['csc', 'puc'], keys: ['puc'], now })
-      expect(only.map(d => d.key)).toEqual(['puc'])
+      const only = await selectDueSources(db, { live: ['csc', 'spo_hands'], keys: ['spo_hands'], now })
+      expect(only.map(d => d.key)).toEqual(['spo_hands'])
     } finally { await db.end() }
   })
 })

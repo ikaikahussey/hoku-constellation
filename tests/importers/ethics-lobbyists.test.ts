@@ -1,7 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createTestDb, type TestDb } from '../helpers/pglite'
 import * as mod from '@/lib/import/sources/ethics-lobbyists'
+import { readFileSync } from 'node:fs'
+import { parseCsv } from '@/lib/import/sources/property-hnl'
 import { runTwice, edgesFor } from './_harness'
+
+const fixture = (f: string) => readFileSync(new URL(`../../lib/import/sources/__fixtures__/${f}`, import.meta.url), 'utf8')
 import registrations from '@/lib/import/sources/__fixtures__/ethics-lobbyists.json'
 import expenditures from '@/lib/import/sources/__fixtures__/ethics-expenditures.json'
 
@@ -20,6 +24,35 @@ describe('ethics_lobbyists parser', () => {
   it('parses expenditure rows for org and person filers', () => {
     expect(mod.parseExpenditure(expenditures[0] as Record<string, unknown>)).toMatchObject({ filer: 'Hawaii Gas', filerIsOrg: true, amount: 12500, payee: 'Pacific Media Group', category: 'Media Advertising' })
     expect(mod.parseExpenditure(expenditures[1] as Record<string, unknown>)).toMatchObject({ filer: 'Smith, John A.', filerIsOrg: false, amount: 45000, payee: null })
+  })
+})
+
+describe('ethics_lobbyists CSV route', () => {
+  it('finds the CSV downloads on a dataset page (not the CKAN API)', () => {
+    const page = 'https://opendata.hawaii.gov/dataset/hawaii-state-ethics-commission-s-lobbyist-registration-statements'
+    expect(mod.csvLinks(fixture('ethics/dataset-page.html'), page)).toEqual([
+      'https://opendata.hawaii.gov/dataset/9f4e6414-dd04-40bf-88d2-31b5b8b6e8d3/resource/f186ec29-a1c8-4985-b92e-870b19db8211/download/socrata_-lobbyist-registration-statements.csv',
+      'https://opendata.hawaii.gov/dataset/9f4e6414-dd04-40bf-88d2-31b5b8b6e8d3/resource/aed69d13-fe07-4e91-8abf-a51c8a408e1f/download/socrata_-lobbyist-registration-statements.csv',
+    ])
+    for (const u of Object.values(mod.DATASET_PAGES)) expect(u).not.toMatch(/\/api\/|\/datastore\//)
+  })
+  it('parses CSV rows with a content-hash id; equal rows share an id', () => {
+    const rows = parseCsv(fixture('ethics/registrations.csv'))
+    expect(rows).toHaveLength(4)
+    const p = mod.parseRegistration(rows[0])!
+    expect(p).toMatchObject({ lobbyist: 'Smith, John A.', client: 'Hawaii Gas', registrationDate: '2025-01-10', terminationDate: null, amended: false })
+    expect(p.recordId).toMatch(/^[0-9a-f]{24}$/)
+    expect(mod.parseRegistration({ ...rows[0] })!.recordId).toBe(p.recordId)
+    expect(mod.parseRegistration(rows[1])!.recordId).not.toBe(p.recordId)
+    expect(mod.parseRegistration({ 'FULL NAME': 'Pua, Leilani', 'lobby_year': '2025' })).toMatchObject({ lobbyist: 'Pua, Leilani', lobbyYear: '2025' })
+    expect(mod.parseRegistration(rows[3])).toBeNull()
+  })
+  it('imports CSV rows idempotently', async () => {
+    const csvDb = await createTestDb()
+    try {
+      const r = await runTwice(csvDb, mod, parseCsv(fixture('ethics/registrations.csv')), { dataset: 'registrations' }, 3)
+      expect(r.edges).toBe(2)
+    } finally { await csvDb.end() }
   })
 })
 

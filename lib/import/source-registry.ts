@@ -48,24 +48,22 @@ export const SOURCE_REGISTRY: SourceDefinition[] = [
   // ============================================================ Tier 1 — State
   {
     key: 'csc', name: 'Campaign Spending Commission — contributions, expenditures, loans', agency: 'Hawaiʻi Campaign Spending Commission',
-    jurisdiction: 'state', accessMethod: 'ckan', baseUrl: 'https://opendata.hawaii.gov',
-    urls: [
-      'https://opendata.hawaii.gov/api/3/action/datastore_search?resource_id=443bd998-1ef3-47da-9170-c2c376b2e41c&limit=1',
-      'https://opendata.hawaii.gov/api/3/action/datastore_search?resource_id=bc5fae08-b97e-45fc-9c3b-f0883efad371&limit=1',
-      'https://opendata.hawaii.gov/api/3/action/datastore_search?resource_id=ca3ac02a-eb44-4b44-b3a7-5f60653cc1d3&limit=1',
-      'https://opendata.hawaii.gov/api/3/action/datastore_search?resource_id=f20b548a-83db-46e9-a0de-8bfd777ec89d&limit=1',
-      'https://hicscdata.hawaii.gov',
-    ],
+    jurisdiction: 'state', accessMethod: 'socrata', baseUrl: 'https://hicscdata.hawaii.gov',
+    urls: ['https://hicscdata.hawaii.gov/api/catalog/v1?domains=hicscdata.hawaii.gov&only=dataset&limit=100', 'https://hicscdata.hawaii.gov/resource/jexd-xbcg.json?$limit=1'],
     docTypes: ['contribution', 'expenditure', 'loan'], edgeTypes: ['contributed_to', 'spent_with', 'loaned_to'], entityKinds: ['person', 'org'],
     cadence: 'daily', tier: 1, status: 'live',
-    notes: 'Four known resource ids; the rest discovered via package_search "campaign spending". Socrata mirror at hicscdata.hawaii.gov.',
+    notes: 'Socrata (hicscdata.hawaii.gov): datasets from the catalog API, rows from SODA. The opendata.hawaii.gov CKAN mirror is not used: its robots.txt disallows /api/ and /datastore/.',
   },
   {
     key: 'ethics_lobbyists', name: 'State Ethics Commission — lobbyist registrations & expenditure statements', agency: 'Hawaiʻi State Ethics Commission',
-    jurisdiction: 'state', accessMethod: 'ckan', baseUrl: 'https://opendata.hawaii.gov',
-    urls: ['https://opendata.hawaii.gov/api/3/action/datastore_search?resource_id=aed69d13-fe07-4e91-8abf-a51c8a408e1f&limit=1', 'https://ethics.hawaii.gov'],
+    jurisdiction: 'state', accessMethod: 'bulk_download', baseUrl: 'https://opendata.hawaii.gov',
+    urls: [
+      'https://opendata.hawaii.gov/dataset/hawaii-state-ethics-commission-s-lobbyist-registration-statements',
+      'https://opendata.hawaii.gov/dataset/hawaii-state-ethics-commission-s-lobbyists-expenditure-statements',
+    ],
     docTypes: ['lobbyist_registration', 'lobbyist_expenditure'], edgeTypes: ['lobbied_for', 'spent_with', 'lobbied_on'], entityKinds: ['person', 'org'],
-    cadence: 'weekly', tier: 1, status: 'live',
+    cadence: 'weekly', tier: 1, status: 'live', restartOnComplete: true,
+    notes: 'CSV downloads linked from the dataset pages (robots.txt permits /dataset/; it disallows the CKAN /api/ and /datastore/).',
   },
   {
     key: 'ethics_disclosures', name: 'State Ethics Commission — financial & gift disclosures, charges', agency: 'Hawaiʻi State Ethics Commission',
@@ -109,8 +107,9 @@ export const SOURCE_REGISTRY: SourceDefinition[] = [
   },
   {
     key: 'boards', name: 'Boards & Commissions — appointments', agency: 'Office of the Governor',
-    jurisdiction: 'state', accessMethod: 'html', baseUrl: 'https://boards.hawaii.gov',
-    docTypes: ['appointment'], edgeTypes: ['appointed_to'], entityKinds: ['person', 'office'], cadence: 'weekly', tier: 1, status: 'live',
+    jurisdiction: 'state', accessMethod: 'html', baseUrl: 'https://boards.hawaii.gov', urls: ['https://boards.hawaii.gov/sitemap.xml'],
+    docTypes: ['appointment'], edgeTypes: ['appointed_to'], entityKinds: ['person', 'office'], cadence: 'weekly', tier: 1, status: 'live', restartOnComplete: true,
+    notes: 'WordPress multisite: board list from the root sitemap index, rosters from each board subsite.',
   },
   {
     key: 'governor_orders', name: 'Governor — executive orders & proclamations', agency: 'Office of the Governor',
@@ -126,8 +125,8 @@ export const SOURCE_REGISTRY: SourceDefinition[] = [
   {
     key: 'puc', name: 'Public Utilities Commission — dockets & parties', agency: 'Hawaiʻi Public Utilities Commission',
     jurisdiction: 'state', accessMethod: 'html', baseUrl: 'https://dms.puc.hawaii.gov', urls: ['https://puc.hawaii.gov'],
-    docTypes: ['docket_filing'], edgeTypes: ['party_to'], entityKinds: ['docket', 'org', 'person'], cadence: 'daily', tier: 1, status: 'live',
-    notes: 'DMS docket search HTML tables; replaces the hard-coded docket list in the legacy importer.',
+    docTypes: ['docket_filing'], edgeTypes: ['party_to'], entityKinds: ['docket', 'org', 'person'], cadence: 'daily', tier: 1, status: 'live', paused: true,
+    notes: 'DMS docket search HTML tables. Paused (Oct 2026): dms.puc.hawaii.gov fails at the connection level from production over https and http ("fetch failed"); puc.hawaii.gov has no docket listing. The probe keeps checking the DMS host.',
   },
   {
     key: 'elections', name: 'Office of Elections — candidate filings & results', agency: 'Office of Elections',

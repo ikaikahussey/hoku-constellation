@@ -16,9 +16,9 @@ export class SocrataClient {
     return u.toString()
   }
 
-  async query<T = Record<string, unknown>>(datasetId: string, opts: { limit?: number; offset?: number; where?: string; order?: string; select?: string } = {}): Promise<T[]> {
+  async query<T = Record<string, unknown>>(datasetId: string, opts: { limit?: number; offset?: number; where?: string; order?: string; select?: string; q?: string } = {}): Promise<T[]> {
     return fetchJson<T[]>(this.url(datasetId, {
-      $limit: opts.limit ?? 1000, $offset: opts.offset ?? 0, $where: opts.where, $order: opts.order ?? ':id', $select: opts.select,
+      $limit: opts.limit ?? 1000, $offset: opts.offset ?? 0, $where: opts.where, $order: opts.order ?? ':id', $select: opts.select, $q: opts.q,
     }), { headers: this.headers() })
   }
 

@@ -1,0 +1,5 @@
+[
+  { ":id": "row-aaaa~1111", "candidate_name": "Green, Josh", "contributor_type": "Noncandidate Committee", "contributor_name": "Hawaiian Electric Industries PAC", "date": "2022-03-15T00:00:00.000", "amount": "2000", "aggregate": "4000", "reg_no": "CC10529", "election_period": "2018-2022", "office": "Governor", "non_monetary_yes_or_no": "N" },
+  { ":id": "row-aaaa~2222", "candidate_name": "Green, Josh", "contributor_type": "Individual", "contributor_name": "Doe, Jane", "date": "2022-06-30T00:00:00.000", "amount": "250", "aggregate": "250", "employer": "Self", "occupation": "Attorney", "reg_no": "CC10529", "election_period": "2018-2022", "office": "Governor", "city": "Honolulu", "state": "HI" },
+  { ":id": "row-aaaa~3333", "candidate_name": "Green, Josh", "contributor_type": "Individual", "date": "2022-07-01T00:00:00.000", "amount": "100", "reg_no": "CC10529" }
+]

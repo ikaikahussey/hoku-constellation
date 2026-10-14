@@ -28,6 +28,8 @@ export interface ProbeResult {
   /** Feed, sitemap, and same-site links found on an HTML page (max 40). */
   links: string[]
   error: string | null
+  /** Body sample, for URLs in RAW_SAMPLES only. */
+  raw?: string
 }
 
 export interface ProbeTarget { source: string; urls: string[] }
@@ -35,9 +37,9 @@ export interface ProbeTarget { source: string; urls: string[] }
 /** Extra URLs worth checking when repairing sources that are currently failing. */
 const CANDIDATES: Record<string, string[]> = {
   boards: [
-    'https://boards.hawaii.gov/boards-directory/',
-    'https://boards.hawaii.gov/sitemap.xml',
-    'https://boards.hawaii.gov/wp-json/wp/v2/types',
+    'https://boards.hawaii.gov/blnr/',
+    'https://boards.hawaii.gov/blnr/sitemap.xml',
+    'https://boards.hawaii.gov/puc/',
   ],
   puc: [
     'https://dms.puc.hawaii.gov/dms/',
@@ -46,15 +48,13 @@ const CANDIDATES: Record<string, string[]> = {
     'https://puc.hawaii.gov/sitemap.xml',
   ],
   ethics_lobbyists: [
-    'https://opendata.hawaii.gov/dataset/hawaii-state-ethics-commission-s-lobbyist-registration-statements',
-    'https://opendata.hawaii.gov/dataset/hawaii-state-ethics-commission-s-lobbyists-expenditure-statements',
-    'https://ethics.hawaii.gov/lobbying-e-filing/',
+    'https://opendata.hawaii.gov/dataset/9f4e6414-dd04-40bf-88d2-31b5b8b6e8d3/resource/aed69d13-fe07-4e91-8abf-a51c8a408e1f/download/socrata_-lobbyist-registration-statements.csv',
+    'https://opendata.hawaii.gov/dataset/c7da026f-b7b4-42b3-9912-d303a2810064/resource/af128f67-1350-44cf-a59c-76d247f659f3/download/hawaii-state-ethics-commissions-lobbyists-expenditure-statements-csv.csv',
   ],
   csc: [
-    'https://hicscdata.hawaii.gov/',
-    'https://hicscdata.hawaii.gov/browse?limit=50',
-    'https://hicscdata.hawaii.gov/api/catalog/v1?domains=hicscdata.hawaii.gov&limit=50',
-    'https://opendata.hawaii.gov/dataset/?q=campaign+spending',
+    'https://hicscdata.hawaii.gov/robots.txt',
+    'https://hicscdata.hawaii.gov/api/catalog/v1?domains=hicscdata.hawaii.gov&only=dataset&limit=100',
+    'https://hicscdata.hawaii.gov/resource/jexd-xbcg.json?$limit=2',
   ],
   fec: [
     'https://www.fec.gov/data/browse-data/?tab=bulk-data',
@@ -65,6 +65,17 @@ const CANDIDATES: Record<string, string[]> = {
     'https://themolokaidispatch.com/?feed=rss2',
   ],
 }
+
+/**
+ * URLs whose response body is kept (first RAW_BYTES characters) in the probe result as `raw`, so an
+ * importer's parser can be written against the production response.
+ */
+const RAW_SAMPLES = new Set([
+  ...CANDIDATES.boards,
+  ...CANDIDATES.ethics_lobbyists,
+  ...CANDIDATES.csc,
+])
+const RAW_BYTES = 30_000
 
 /** Sources probed by default: the ones with repair candidates (currently failing, or the news feeds). */
 export const DEFAULT_PROBE_SOURCES = Object.keys(CANDIDATES)
@@ -157,6 +168,7 @@ export async function probeUrl(url: string): Promise<ProbeResult & { robotsRules
       kind, items, snippet: text.slice(0, kind === 'html' ? 300 : 1200),
       links: kind === 'html' ? discoverLinks(body, res.url || url) : kind === 'sitemap' ? sitemapLocs(body).slice(0, 250) : [],
       error: res.ok ? null : `HTTP ${res.status}`,
+      ...(RAW_SAMPLES.has(url) ? { raw: body.slice(0, RAW_BYTES) } : {}),
     }
   } catch (e) {
     return { url, robots, robotsRules, ...empty, ms: Date.now() - started, error: (e as Error).message.slice(0, 300) }
