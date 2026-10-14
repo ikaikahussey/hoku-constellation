@@ -96,6 +96,25 @@ export function parseMeasurePage(html: string, session: string, url: string): Me
 }
 
 export const listUrl = (session: string) => `${DATA_BASE}/sessions/session${session}/bills/`
+
+const LIST_TTL_MS = 24 * 60 * 60_000
+
+/**
+ * The session's measure list, cached for a day in the calling source's import_cursor.metadata.measure_list.
+ * The list page is large and slow; cron batches are small, so fetching it per batch timed the batches out.
+ */
+export async function cachedMeasureList(db: Db, source: string, session: string): Promise<string[]> {
+  const row = await db.one<{ list: { session: string; at: string; measures: string[] } | null }>(
+    `select metadata->'measure_list' list from import_cursor where source = $1`, [source])
+  const c = row?.list
+  if (c && c.session === session && Array.isArray(c.measures) && c.measures.length && Date.now() - new Date(c.at).getTime() < LIST_TTL_MS) return c.measures
+  const measures = parseMeasureList(await fetchText(listUrl(session), { timeoutMs: 90_000, retries: 2 }))
+  await db.query(
+    `insert into import_cursor(source, metadata) values ($1, jsonb_build_object('measure_list', $2::jsonb))
+     on conflict (source) do update set metadata = coalesce(import_cursor.metadata, '{}'::jsonb) || jsonb_build_object('measure_list', $2::jsonb)`,
+    [source, JSON.stringify({ session, at: new Date().toISOString(), measures })])
+  return measures
+}
 export const measureUrl = (session: string, measure: string) => `${DATA_BASE}/sessions/session${session}/bills/${measure}_.HTM`
 export const siteMeasureUrl = (session: string, measure: string) => `${SITE_BASE}/session/measure_indiv.aspx?billtype=${measure.match(/^[A-Z]+/)?.[0]}&billnumber=${measure.replace(/^[A-Z]+/, '')}&year=${session}`
 
@@ -109,7 +128,7 @@ export async function importBatch(db: Db, offset: number, batchSize: number, opt
   if (opts.pageSource) {
     page = (await opts.pageSource(offset, batchSize, params)) as unknown as SourcePage<MeasureParsed>
   } else {
-    const all = parseMeasureList(await fetchText(listUrl(session)))
+    const all = await cachedMeasureList(db, SOURCE_KEY, session)
     const slice = all.slice(offset, offset + batchSize)
     const records: MeasureParsed[] = []
     for (const m of slice) {

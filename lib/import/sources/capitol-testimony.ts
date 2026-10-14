@@ -14,7 +14,7 @@ import { processRecord, emptyResult, resolveRef, type BatchResult, type EdgeInpu
 import { cleanName, canonicalPersonName, normalizeMeasure, looksLikeOrg } from '../normalize'
 import type { ImportOptions, SourcePage } from '../types'
 import { load } from 'cheerio'
-import { listUrl, parseMeasureList, siteMeasureUrl, currentSession, SITE_BASE } from './capitol-measures'
+import { cachedMeasureList, siteMeasureUrl, currentSession, SITE_BASE } from './capitol-measures'
 
 export const SOURCE_KEY = 'capitol_testimony'
 
@@ -102,7 +102,7 @@ export async function importBatch(db: Db, offset: number, batchSize: number, opt
     page = (await opts.pageSource(offset, batchSize, params)) as unknown as SourcePage<TestimonyPacket>
   } else {
     // `offset` indexes measures in the session list; each measure may yield several packets.
-    const all = params.measures ? params.measures.split(',').map(normalizeMeasure) : parseMeasureList(await fetchText(listUrl(session)))
+    const all = params.measures ? params.measures.split(',').map(normalizeMeasure) : await cachedMeasureList(db, SOURCE_KEY, session)
     const slice = all.slice(offset, offset + batchSize)
     const records: TestimonyPacket[] = []
     for (const measure of slice) {

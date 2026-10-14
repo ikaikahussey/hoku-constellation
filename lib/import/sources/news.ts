@@ -10,6 +10,9 @@
  *
  * Summaries are written separately by lib/news/summarize.ts (cron /api/cron/news, workers/summarize-news.ts).
  *
+ * Each feed's outcome (items read or the error) is merged into import_cursor.metadata.feeds[<outlet>], so a
+ * failing outlet can be identified from the database.
+ *
  * Params: --outlet=<key>[,<key>]  restrict to outlets.  --feed-url=<url> --outlet=<key>  read one feed URL.
  */
 import type { Db } from '@/lib/db/types'
@@ -38,6 +41,15 @@ export interface ArticleRaw {
   categories: string[]
 }
 
+export interface FeedStatus { feed_url: string; at: string; items: number; error: string | null }
+
+async function recordFeedStatus(db: Db, status: Record<string, FeedStatus>) {
+  if (!Object.keys(status).length) return
+  await db.query(
+    `update import_cursor set metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object('feeds', coalesce(metadata->'feeds', '{}'::jsonb) || $1::jsonb)
+      where source = $2`, [JSON.stringify(status), SOURCE_KEY])
+}
+
 export function articleBody(item: Pick<FeedItem, 'description' | 'content'>): string | null {
   return item.content ?? item.description ?? null
 }
@@ -54,6 +66,8 @@ export async function importBatch(db: Db, offset: number, batchSize: number, opt
   const params = opts.params ?? {}
   const result = emptyResult(offset)
 
+  const feedStatus: Record<string, FeedStatus> = {}
+  const at = new Date().toISOString()
   let page: SourcePage<FeedRecord>
   if (opts.pageSource) {
     page = (await opts.pageSource(offset, batchSize, params)) as SourcePage<FeedRecord>
@@ -66,6 +80,7 @@ export async function importBatch(db: Db, offset: number, batchSize: number, opt
     for (const f of slice) {
       try { records.push({ ...f, xml: await fetchText(f.feedUrl, { noCache: true, timeoutMs: 20_000 }) }) } catch (e) {
         result.errors++
+        feedStatus[f.outlet] = { feed_url: f.feedUrl, at, items: 0, error: (e as Error).message.slice(0, 300) }
         log(`${f.outlet} ${f.feedUrl}: ${(e as Error).message}`)
       }
     }
@@ -76,7 +91,13 @@ export async function importBatch(db: Db, offset: number, batchSize: number, opt
 
   for (const feed of page.records) {
     let items: FeedItem[]
-    try { items = parseFeed(feed.xml) } catch (e) { result.errors++; log(`${feed.outlet}: parse failed: ${(e as Error).message}`); continue }
+    try { items = parseFeed(feed.xml) } catch (e) {
+      result.errors++
+      feedStatus[feed.outlet] = { feed_url: feed.feedUrl, at, items: 0, error: `parse failed: ${(e as Error).message}`.slice(0, 300) }
+      log(`${feed.outlet}: parse failed: ${(e as Error).message}`)
+      continue
+    }
+    feedStatus[feed.outlet] = { feed_url: feed.feedUrl, at, items: items.length, error: items.length ? null : `no items (${feed.xml.slice(0, 120).replace(/\s+/g, ' ')})` }
     const outletName = getOutlet(feed.outlet)?.name ?? feed.outlet
     for (const item of items) {
       const raw: ArticleRaw = {
@@ -107,6 +128,7 @@ export async function importBatch(db: Db, offset: number, batchSize: number, opt
       } catch (e) { result.errors++; log(`${feed.outlet} ${item.guid}: ${(e as Error).message}`) }
     }
   }
+  await recordFeedStatus(db, feedStatus)
   if (opts.pageSource) result.nextOffset = offset + page.records.length
   result.done = page.done ?? page.records.length < batchSize
   return result
