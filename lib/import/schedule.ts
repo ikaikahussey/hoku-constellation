@@ -33,7 +33,7 @@ export const CRON_BATCH_SIZE = 25
 export interface CursorState { source: string; cursor_offset: number; status: string | null; last_run_at: string | null }
 
 export function isDue(def: SourceDefinition, cursor: CursorState | undefined, now = Date.now()): boolean {
-  if (def.status !== 'live') return false
+  if (def.status !== 'live' || def.paused) return false
   const interval = CADENCE_MS[def.cadence]
   if (interval === null) return false
   if (!cursor || !cursor.last_run_at) return true

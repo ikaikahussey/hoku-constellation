@@ -11,7 +11,6 @@ import { load } from 'cheerio'
 import type { Db } from '@/lib/db/types'
 import { httpFetch, robotsFor, isAllowed, type RobotsRules } from './http'
 import { SOURCE_REGISTRY } from './source-registry'
-import { NEWS_OUTLETS } from '@/lib/news/outlets'
 
 export interface ProbeResult {
   url: string
@@ -36,46 +35,34 @@ export interface ProbeTarget { source: string; urls: string[] }
 /** Extra URLs worth checking when repairing sources that are currently failing. */
 const CANDIDATES: Record<string, string[]> = {
   boards: [
-    'https://boards.hawaii.gov/',
-    'https://boards.hawaii.gov/boards/',
-    'https://boards.hawaii.gov/wp-sitemap.xml',
+    'https://boards.hawaii.gov/boards-directory/',
     'https://boards.hawaii.gov/sitemap.xml',
-    'https://boards.hawaii.gov/sitemap_index.xml',
-    'https://boards.hawaii.gov/wp-json/wp/v2/pages?per_page=5&_fields=id,link,title',
+    'https://boards.hawaii.gov/wp-json/wp/v2/types',
   ],
   puc: [
     'https://dms.puc.hawaii.gov/dms/',
-    'https://dms.puc.hawaii.gov/dms/DocketSearch?year=2026&page=1',
-    'https://puc.hawaii.gov/',
+    'http://dms.puc.hawaii.gov/dms/',
+    'https://puc.hawaii.gov/dockets/',
+    'https://puc.hawaii.gov/sitemap.xml',
   ],
   ethics_lobbyists: [
-    'https://opendata.hawaii.gov/api/3/action/package_search?q=lobbyist&rows=5',
-    'https://opendata.hawaii.gov/api/3/action/datastore_search?resource_id=aed69d13-fe07-4e91-8abf-a51c8a408e1f&limit=1',
-    'https://opendata.hawaii.gov/datastore/dump/aed69d13-fe07-4e91-8abf-a51c8a408e1f',
-    'https://opendata.hawaii.gov/dataset/?q=lobbyist',
-    'https://ethics.hawaii.gov/lobbying/',
+    'https://opendata.hawaii.gov/dataset/hawaii-state-ethics-commission-s-lobbyist-registration-statements',
+    'https://opendata.hawaii.gov/dataset/hawaii-state-ethics-commission-s-lobbyists-expenditure-statements',
+    'https://ethics.hawaii.gov/lobbying-e-filing/',
+  ],
+  csc: [
+    'https://hicscdata.hawaii.gov/',
+    'https://hicscdata.hawaii.gov/browse?limit=50',
+    'https://hicscdata.hawaii.gov/api/catalog/v1?domains=hicscdata.hawaii.gov&limit=50',
+    'https://opendata.hawaii.gov/dataset/?q=campaign+spending',
   ],
   fec: [
-    'https://api.open.fec.gov/v1/committees/?state=HI&per_page=1&api_key=DEMO_KEY',
     'https://www.fec.gov/data/browse-data/?tab=bulk-data',
-    'https://www.fec.gov/files/bulk-downloads/2026/cm26.zip',
-  ],
-  capitol_measures: [
-    'https://data.capitol.hawaii.gov/sessions/session2026/bills/',
-    'https://data.capitol.hawaii.gov/sessions/session2026/',
-    'https://www.capitol.hawaii.gov/',
   ],
   news: [
-    'https://www.kitv.com/search/?f=rss&t=article&l=50&s=start_time&sd=desc',
-    'https://www.kitv.com/',
-    'https://www.thehawaiiherald.com/feed/',
-    'https://thehawaiiherald.com/feed/',
-    'https://www.thehawaiiherald.com/',
-    'https://www.lahainanews.com/feed/',
     'https://www.lahainanews.com/',
-    'https://themolokaidispatch.com/feed/',
-    'https://www.themolokaidispatch.com/feed/',
     'https://themolokaidispatch.com/',
+    'https://themolokaidispatch.com/?feed=rss2',
   ],
 }
 
@@ -92,7 +79,8 @@ export function probeTargets(only?: string[]): ProbeTarget[] {
   }
   for (const s of SOURCE_REGISTRY) {
     if (s.status !== 'live') continue
-    add(s.key, s.key === 'news' ? NEWS_OUTLETS.filter(o => o.enabled).flatMap(o => o.feeds) : [s.baseUrl, ...(s.urls ?? [])])
+    // News feeds report their own status in import_cursor.metadata.feeds; only candidates are probed for news.
+    if (s.key !== 'news' && !s.paused) add(s.key, [s.baseUrl, ...(s.urls ?? [])])
   }
   for (const [source, urls] of Object.entries(CANDIDATES)) add(source, urls)
   return [...out]
@@ -110,7 +98,12 @@ export function sniff(body: string, contentType: string | null): { kind: string;
   return { kind: 'other', items: null }
 }
 
-/** Feed, sitemap, and same-host navigation links on an HTML page. */
+/** <loc> entries of a sitemap or sitemap index. */
+export function sitemapLocs(xml: string): string[] {
+  return [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map(m => m[1].replace(/&amp;/g, '&'))
+}
+
+/** Feed, sitemap, and relevant links on an HTML page, then other same-host links (max 80). */
 export function discoverLinks(html: string, base: string): string[] {
   const $ = load(html)
   const host = new URL(base).host
@@ -123,9 +116,17 @@ export function discoverLinks(html: string, base: string): string[] {
     const href = $(el).attr('href') ?? ''
     let u: URL
     try { u = new URL(href, base) } catch { return }
-    if (/rss|feed|atom|sitemap|board|commission|docket|lobby|bulk/i.test(u.pathname + u.search) && (u.host === host || /rss|feed/i.test(u.pathname))) out.add(u.toString())
+    if (/rss|feed|atom|sitemap|board|commission|docket|lobby|bulk|download|\.csv|resource/i.test(u.pathname + u.search) && (u.host === host || /rss|feed/i.test(u.pathname))) out.add(u.toString())
   })
-  return [...out].slice(0, 40)
+  const rest = new Set<string>()
+  $('a[href]').each((_, el) => {
+    try {
+      const u = new URL($(el).attr('href') ?? '', base)
+      u.hash = ''
+      if (u.host === host && !out.has(u.toString())) rest.add(u.toString())
+    } catch { /* ignore */ }
+  })
+  return [...out, ...rest].slice(0, 80)
 }
 
 function robotsSummary(rules: RobotsRules): string {
@@ -153,7 +154,9 @@ export async function probeUrl(url: string): Promise<ProbeResult & { robotsRules
     const text = kind === 'html' ? load(body)('title').first().text().trim() + ' | ' + load(body)('body').text().replace(/\s+/g, ' ').trim() : body.replace(/\s+/g, ' ')
     return {
       url, robots, robotsRules, status: res.status, finalUrl: res.url, contentType, bytes: body.length, ms: Date.now() - started,
-      kind, items, snippet: text.slice(0, 300), links: kind === 'html' ? discoverLinks(body, res.url || url) : [], error: res.ok ? null : `HTTP ${res.status}`,
+      kind, items, snippet: text.slice(0, kind === 'html' ? 300 : 1200),
+      links: kind === 'html' ? discoverLinks(body, res.url || url) : kind === 'sitemap' ? sitemapLocs(body).slice(0, 250) : [],
+      error: res.ok ? null : `HTTP ${res.status}`,
     }
   } catch (e) {
     return { url, robots, robotsRules, ...empty, ms: Date.now() - started, error: (e as Error).message.slice(0, 300) }

@@ -40,6 +40,8 @@ export interface SourceDefinition {
    * source is re-read. Without it a completed cursor resumes at the end and the refresh reads nothing.
    */
   restartOnComplete?: boolean
+  /** Paused by the owner: the cron and workers skip it; a manual run from /admin still works. Reason in notes. */
+  paused?: boolean
 }
 
 export const SOURCE_REGISTRY: SourceDefinition[] = [
@@ -76,7 +78,8 @@ export const SOURCE_REGISTRY: SourceDefinition[] = [
     key: 'capitol_measures', name: 'Legislature — measures, introducers, status', agency: 'Hawaiʻi State Legislature',
     jurisdiction: 'state', accessMethod: 'api', baseUrl: 'https://data.capitol.hawaii.gov', urls: ['https://www.capitol.hawaii.gov'],
     docTypes: ['measure'], edgeTypes: ['sponsored'], entityKinds: ['bill', 'person'],
-    cadence: 'daily', tier: 1, status: 'live',
+    cadence: 'daily', tier: 1, status: 'live', paused: true,
+    notes: 'Paused by the owner (Oct 2026) while measure-page fetches fail in production.',
   },
   {
     key: 'capitol_votes', name: 'Legislature — committee and floor votes', agency: 'Hawaiʻi State Legislature',
@@ -141,8 +144,8 @@ export const SOURCE_REGISTRY: SourceDefinition[] = [
   {
     key: 'fec', name: 'FEC — Schedule A contributions (Hawaiʻi committees)', agency: 'Federal Election Commission',
     jurisdiction: 'federal', accessMethod: 'api', baseUrl: 'https://api.open.fec.gov',
-    docTypes: ['contribution'], edgeTypes: ['contributed_to'], entityKinds: ['person', 'org'], cadence: 'daily', tier: 1, status: 'live',
-    secrets: ['FEC_API_KEY'], notes: 'Coverage: all committees with state=HI plus the delegation’s principal committees.',
+    docTypes: ['contribution'], edgeTypes: ['contributed_to'], entityKinds: ['person', 'org'], cadence: 'daily', tier: 1, status: 'blocked',
+    secrets: ['FEC_API_KEY'], notes: 'Blocked: api.open.fec.gov robots.txt disallows automated access (probe, Oct 2026); re-enable when a permitted route exists. Coverage: all committees with state=HI plus the delegation’s principal committees.',
   },
   {
     key: 'lda', name: 'Lobbying Disclosure Act — LD-1 / LD-2 / LD-203', agency: 'U.S. Senate / House (LDA.gov)',
