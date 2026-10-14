@@ -197,6 +197,7 @@ export async function importBatch(db: Db, offset: number, batchSize: number, opt
       const resources = await discoverResources(ckan, log)
       const state: CscState = { resources }
       const idx = Number(params.resourceIndex ?? 0)
+      if (!resources.length) throw new Error('no readable CSC resources: the opendata.hawaii.gov CKAN API (/api/) is disallowed by robots.txt')
       const chosen = resources[idx]
       if (!chosen) return { ...result, done: true }
       resourceId = chosen.id

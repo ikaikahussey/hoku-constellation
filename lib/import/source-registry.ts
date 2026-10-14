@@ -141,8 +141,8 @@ export const SOURCE_REGISTRY: SourceDefinition[] = [
   {
     key: 'fec', name: 'FEC — Schedule A contributions (Hawaiʻi committees)', agency: 'Federal Election Commission',
     jurisdiction: 'federal', accessMethod: 'api', baseUrl: 'https://api.open.fec.gov',
-    docTypes: ['contribution'], edgeTypes: ['contributed_to'], entityKinds: ['person', 'org'], cadence: 'daily', tier: 1, status: 'live',
-    secrets: ['FEC_API_KEY'], notes: 'Coverage: all committees with state=HI plus the delegation’s principal committees.',
+    docTypes: ['contribution'], edgeTypes: ['contributed_to'], entityKinds: ['person', 'org'], cadence: 'daily', tier: 1, status: 'blocked',
+    secrets: ['FEC_API_KEY'], notes: 'Blocked: api.open.fec.gov robots.txt disallows automated access (probe, Oct 2026); re-enable when a permitted route exists. Coverage: all committees with state=HI plus the delegation’s principal committees.',
   },
   {
     key: 'lda', name: 'Lobbying Disclosure Act — LD-1 / LD-2 / LD-203', agency: 'U.S. Senate / House (LDA.gov)',

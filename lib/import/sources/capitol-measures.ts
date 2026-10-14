@@ -139,6 +139,8 @@ export async function importBatch(db: Db, offset: number, batchSize: number, opt
       } catch (e) { result.errors++; log(`${m}: ${(e as Error).message}`) }
     }
     page = { records, total: all.length, done: offset + slice.length >= all.length }
+    // Advance past measures whose page failed; they are retried on the next full pass, not forever.
+    result.nextOffset = offset + slice.length
   }
 
   for (const m of page.records) {
@@ -167,7 +169,7 @@ export async function importBatch(db: Db, offset: number, batchSize: number, opt
       }, result)
     } catch (e) { result.errors++; log(`${m.measure}: ${(e as Error).message}`) }
   }
-  result.nextOffset = offset + page.records.length
+  if (opts.pageSource) result.nextOffset = offset + page.records.length
   result.done = page.done ?? page.records.length < batchSize
   return result
 }
