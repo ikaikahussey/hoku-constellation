@@ -26,7 +26,8 @@ describe('source probe helpers', () => {
   it('targets the failing sources and the news feeds by default', () => {
     const t = probeTargets(DEFAULT_PROBE_SOURCES)
     const keys = t.map(x => x.source)
-    for (const k of ['boards', 'puc', 'ethics_lobbyists', 'csc', 'capitol_measures', 'news']) expect(keys).toContain(k)
+    for (const k of ['boards', 'puc', 'ethics_lobbyists', 'csc', 'news']) expect(keys).toContain(k)
+    expect(keys).not.toContain('capitol_measures') // paused
     // News feeds report their own status; the probe checks only repair candidates for news.
     const news = t.find(x => x.source === 'news')!
     expect(news.urls).not.toContain('https://www.civilbeat.org/feed/')

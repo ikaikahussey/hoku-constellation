@@ -40,6 +40,8 @@ export interface SourceDefinition {
    * source is re-read. Without it a completed cursor resumes at the end and the refresh reads nothing.
    */
   restartOnComplete?: boolean
+  /** Paused by the owner: the cron and workers skip it; a manual run from /admin still works. Reason in notes. */
+  paused?: boolean
 }
 
 export const SOURCE_REGISTRY: SourceDefinition[] = [
@@ -76,7 +78,8 @@ export const SOURCE_REGISTRY: SourceDefinition[] = [
     key: 'capitol_measures', name: 'Legislature — measures, introducers, status', agency: 'Hawaiʻi State Legislature',
     jurisdiction: 'state', accessMethod: 'api', baseUrl: 'https://data.capitol.hawaii.gov', urls: ['https://www.capitol.hawaii.gov'],
     docTypes: ['measure'], edgeTypes: ['sponsored'], entityKinds: ['bill', 'person'],
-    cadence: 'daily', tier: 1, status: 'live',
+    cadence: 'daily', tier: 1, status: 'live', paused: true,
+    notes: 'Paused by the owner (Oct 2026) while measure-page fetches fail in production.',
   },
   {
     key: 'capitol_votes', name: 'Legislature — committee and floor votes', agency: 'Hawaiʻi State Legislature',

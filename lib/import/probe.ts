@@ -59,13 +59,6 @@ const CANDIDATES: Record<string, string[]> = {
   fec: [
     'https://www.fec.gov/data/browse-data/?tab=bulk-data',
   ],
-  capitol_measures: [
-    'https://data.capitol.hawaii.gov/sessions/session2026/bills/HB1_.HTM',
-    'https://data.capitol.hawaii.gov/sessions/session2026/bills/HB1_.htm',
-    'https://data.capitol.hawaii.gov/sessions/session2026/bills/HB1_.PDF',
-    'https://data.capitol.hawaii.gov/sessions/session2026/Testimony/',
-    'https://data.capitol.hawaii.gov/rss.aspx',
-  ],
   news: [
     'https://www.lahainanews.com/',
     'https://themolokaidispatch.com/',
@@ -87,7 +80,7 @@ export function probeTargets(only?: string[]): ProbeTarget[] {
   for (const s of SOURCE_REGISTRY) {
     if (s.status !== 'live') continue
     // News feeds report their own status in import_cursor.metadata.feeds; only candidates are probed for news.
-    if (s.key !== 'news') add(s.key, [s.baseUrl, ...(s.urls ?? [])])
+    if (s.key !== 'news' && !s.paused) add(s.key, [s.baseUrl, ...(s.urls ?? [])])
   }
   for (const [source, urls] of Object.entries(CANDIDATES)) add(source, urls)
   return [...out]
