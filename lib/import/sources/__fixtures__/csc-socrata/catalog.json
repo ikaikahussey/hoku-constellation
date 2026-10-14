@@ -1,0 +1,14 @@
+{
+  "results": [
+    { "resource": { "id": "jexd-xbcg", "name": "Campaign Contributions Received By Hawaii State and County Candidates", "type": "dataset",
+      "columns_name": ["Candidate Name", "Contributor Type", "Contributor Name", "Date", "Amount", "Aggregate", "Employer", "Occupation", "Reg No", "Election Period", "Office", "District", "County", "Party", "Non-Monetary (Yes or No)", "City", "State"],
+      "columns_field_name": ["candidate_name", "contributor_type", "contributor_name", "date", "amount", "aggregate", "employer", "occupation", "reg_no", "election_period", "office", "district", "county", "party", "non_monetary_yes_or_no", "city", "state"] } },
+    { "resource": { "id": "3maa-4fgr", "name": "Expenditures Made By Hawaii State and County Candidates", "type": "dataset",
+      "columns_name": ["Candidate Name", "Vendor Type", "Vendor Name", "Date", "Amount", "Expenditure Category", "Purpose of Expenditure", "Reg No", "Election Period", "Office"],
+      "columns_field_name": ["candidate_name", "vendor_type", "vendor_name", "date", "amount", "expenditure_category", "purpose_of_expenditure", "reg_no", "election_period", "office"] } },
+    { "resource": { "id": "aaaa-1111", "name": "Statement of Intents Filed By Hawaii State and County Candidates", "type": "dataset",
+      "columns_name": ["Candidate Name", "Reg No", "Office"], "columns_field_name": ["candidate_name", "reg_no", "office"] } },
+    { "resource": { "id": "bbbb-2222", "name": "Contributions map", "type": "map", "columns_name": ["Contributor Name"], "columns_field_name": ["contributor_name"] } }
+  ],
+  "resultSetSize": 4
+}

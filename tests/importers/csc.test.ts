@@ -4,6 +4,8 @@ import * as csc from '@/lib/import/sources/csc'
 import { runTwice, edgesFor, dryRunLeavesNothing } from './_harness'
 import contributions from '@/lib/import/sources/__fixtures__/csc.json'
 import expenditures from '@/lib/import/sources/__fixtures__/csc-expenditures.json'
+import catalog from '@/lib/import/sources/__fixtures__/csc-socrata/catalog.json'
+import sodaRows from '@/lib/import/sources/__fixtures__/csc-socrata/rows.json'
 
 let db: TestDb
 beforeAll(async () => { db = await createTestDb() })
@@ -30,6 +32,41 @@ describe('csc parser', () => {
     expect(e).toMatchObject({ fromName: 'Green, Josh', toName: 'Anthology Marketing Group', amount: 15000, role: 'Advertising', fromIsOrg: false })
     const nc = csc.parseCscRecord('expenditure', expenditures[1] as Record<string, unknown>)!
     expect(nc).toMatchObject({ fromName: 'Be Change Now', fromIsOrg: true, regNo: 'NC20456' })
+  })
+})
+
+describe('csc Socrata route (hicscdata.hawaii.gov)', () => {
+  const datasets = csc.datasetsFromCatalog(catalog.results)
+  it('classifies catalog datasets by display names and skips non-datasets and unclassifiable ones', () => {
+    expect(datasets.map(d => [d.id, d.kind])).toEqual([['3maa-4fgr', 'expenditure'], ['jexd-xbcg', 'contribution']])
+    expect(datasets[1].fields).toMatchObject({ candidate_name: 'Candidate Name', contributor_name: 'Contributor Name', reg_no: 'Reg No' })
+    expect(csc.catalogUrl()).toMatch(/^https:\/\/hicscdata\.hawaii\.gov\/api\/catalog\/v1\?/)
+  })
+  it('re-keys SODA rows to display names so the shared parser reads them', () => {
+    const row = csc.rekeyRow(sodaRows[0], datasets[1].fields)
+    expect(row).toMatchObject({ _id: 'row-aaaa~1111', 'Candidate Name': 'Green, Josh', 'Contributor Name': 'Hawaiian Electric Industries PAC' })
+    expect(csc.parseCscRecord('contribution', row)).toMatchObject({ fromName: 'Hawaiian Electric Industries PAC', toName: 'Green, Josh', amount: 2000, date: '2022-03-15', regNo: 'CC10529', recordId: 'row-aaaa~1111' })
+    expect(csc.parseCscRecord('contribution', csc.rekeyRow(sodaRows[2], datasets[1].fields))).toBeNull()
+  })
+  it('maps a cross-dataset offset to a dataset and a local offset', () => {
+    const ds = [{ id: 'a', kind: 'contribution' as const, name: 'a', rows: 3 }, { id: 'b', kind: 'expenditure' as const, name: 'b', rows: 2 }]
+    expect(csc.locate(ds, 0)).toEqual({ index: 0, local: 0 })
+    expect(csc.locate(ds, 3)).toEqual({ index: 1, local: 0 })
+    expect(csc.locate(ds, 4)).toEqual({ index: 1, local: 1 })
+    expect(csc.locate(ds, 5)).toBeNull()
+  })
+  it('imports re-keyed SODA rows idempotently with dataset-scoped record ids', async () => {
+    const sdb = await createTestDb()
+    try {
+      const rows = sodaRows.map(r => csc.rekeyRow(r, datasets[1].fields))
+      const r = await runTwice(sdb, csc, rows, { kind: 'contribution', resource: 'jexd-xbcg' }, 2)
+      expect(r.edges).toBe(2)
+      const docs = await sdb.many<{ source_record_id: string; url: string }>(`select source_record_id, url from document where source = 'csc' order by 1`)
+      expect(docs).toEqual([
+        { source_record_id: 'jexd-xbcg:row-aaaa~1111', url: 'https://hicscdata.hawaii.gov/d/jexd-xbcg' },
+        { source_record_id: 'jexd-xbcg:row-aaaa~2222', url: 'https://hicscdata.hawaii.gov/d/jexd-xbcg' },
+      ])
+    } finally { await sdb.end() }
   })
 })
 

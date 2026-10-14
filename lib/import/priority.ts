@@ -5,7 +5,7 @@
  * The regular importers walk whole datasets by offset, so a given person's records arrive whenever the
  * sweep reaches them. The priority pass instead asks each name-searchable source for the entity's
  * names directly:
- *   - csc: CKAN datastore full-text search (q = surname) on every Campaign Spending Commission resource
+ *   - csc: Socrata full-text search ($q = surname) on every Campaign Spending Commission dataset (hicscdata.hawaii.gov)
  *   - fec: OpenFEC Schedule A by contributor_name (all committees, not only Hawaiʻi committees)
  * Records are written through the same per-record functions as the sweeps (identical source_record_ids),
  * so the pass is idempotent and the later sweep inserts nothing twice. Only rows whose name matches one
@@ -15,9 +15,9 @@
 import type { Db } from '@/lib/db/types'
 import { canonicalPersonName, normalize, normalizeOrg } from '@/lib/entity-match'
 import { fetchJson } from './http'
-import { CkanClient, HAWAII_OPEN_DATA } from './clients/ckan'
+import { SocrataClient } from './clients/socrata'
 import { emptyResult, getCursor, setCursor, type BatchResult } from './pipeline'
-import { discoverResources, parseCscRecord, processCscRecord, type CscResource } from './sources/csc'
+import { CSC_DOMAIN, discoverResources, rekeyRow, parseCscRecord, processCscRecord, type CscResource } from './sources/csc'
 import { FEC_BASE, fecKey, parseScheduleA, processScheduleA, type ScheduleA } from './sources/fec'
 
 export const PRIORITY_SOURCE_KEY = 'priority'
@@ -84,12 +84,18 @@ export interface PriorityFetchers {
 }
 
 const defaultFetchers = (): Required<PriorityFetchers> => {
-  const ckan = new CkanClient(HAWAII_OPEN_DATA)
+  const soda = new SocrataClient(CSC_DOMAIN)
+  const fields = new Map<string, Record<string, string> | undefined>()
   return {
-    cscResources: log => discoverResources(ckan, log),
+    cscResources: async log => {
+      const list = await discoverResources(log)
+      for (const d of list) fields.set(d.id, d.fields)
+      return list
+    },
     cscSearch: async (id, q, offset, limit) => {
-      const r = await ckan.datastoreSearch(id, { q, offset, limit, sort: '_id asc' })
-      return { records: r.records, total: r.total }
+      const rows = await soda.query(id, { q, offset, limit, order: ':id', select: ':id,*' })
+      // SODA reports no total; a short page ends the query.
+      return { records: rows.map(r => rekeyRow(r, fields.get(id))), total: rows.length < limit ? offset + rows.length : Number.MAX_SAFE_INTEGER }
     },
     fecSearch: async (name, state, cursor) => {
       let url = `${FEC_BASE}/schedules/schedule_a/?contributor_name=${encodeURIComponent(name)}&sort=-contribution_receipt_date&per_page=100&api_key=${fecKey()}`
