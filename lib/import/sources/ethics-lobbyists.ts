@@ -1,21 +1,60 @@
 /**
- * State Ethics Commission — lobbyist registration statements (CKAN resource on opendata.hawaii.gov)
- * and lobbyist expenditure statements (discovered by package_search).
+ * State Ethics Commission — lobbyist registration statements and lobbyist expenditure statements,
+ * read from the CSV downloads on the Commission's opendata.hawaii.gov dataset pages.
  *
- * Registration record shape (observed): { _id, "Full Name", "Organization", "Lobby Year", "Registration Date",
- *   "Termination Date", "Amended", "Original", "View" (PDF url) }.
+ * opendata.hawaii.gov's robots.txt disallows /api/ and /datastore/, so the CKAN API is not used. The
+ * dataset pages (/dataset/<name>) and their resource downloads (/dataset/<id>/resource/<id>/download/…)
+ * are permitted: each run reads the dataset page, takes its CSV download link, and parses the file.
+ *
+ * Cursor: one offset across registrations then expenditures. The parsed rows are cached per warm
+ * function instance for 30 minutes, so a cron tick downloads each file once. CSV rows carry no stable
+ * id, so a row's id is a hash of its contents: an unchanged row is never stored twice, and an amended
+ * row becomes a new document (the Commission's own amendment flag is kept in raw).
+ *
+ * Registration columns (observed): Full Name, Organization, Lobby Year, Registration Date,
+ * Termination Date, Amended, Original, View (PDF url).
  */
+import { createHash } from 'node:crypto'
+import { load } from 'cheerio'
 import type { Db } from '@/lib/db/types'
-import { CkanClient, HAWAII_OPEN_DATA } from '../clients/ckan'
+import { fetchText } from '../http'
 import { processRecord, emptyResult, resolveRef, type BatchResult, type EdgeInput } from '../pipeline'
 import { toIsoDate, toAmount, cleanName, canonicalPersonName, periodRange } from '../normalize'
 import type { ImportOptions, SourcePage } from '../types'
+import { parseCsv } from './property-hnl'
 
 export const SOURCE_KEY = 'ethics_lobbyists'
-export const REGISTRATION_RESOURCE = 'aed69d13-fe07-4e91-8abf-a51c8a408e1f'
+export const OPEN_DATA = 'https://opendata.hawaii.gov'
+export const DATASET_PAGES = {
+  registrations: `${OPEN_DATA}/dataset/hawaii-state-ethics-commission-s-lobbyist-registration-statements`,
+  expenditures: `${OPEN_DATA}/dataset/hawaii-state-ethics-commission-s-lobbyists-expenditure-statements`,
+} as const
+export type Dataset = keyof typeof DATASET_PAGES
 
+/** CSV download links on a CKAN dataset page, in page order. */
+export function csvLinks(html: string, base: string): string[] {
+  const $ = load(html)
+  const out = new Set<string>()
+  $('a[href]').each((_, a) => {
+    const href = $(a).attr('href') ?? ''
+    if (!/\/download\/[^?#]*\.csv(\?|#|$)/i.test(href)) return
+    try { out.add(new URL(href, base).toString()) } catch { /* ignore */ }
+  })
+  return [...out]
+}
+
+/** Stable id for a CSV row with no id column. */
+export function rowId(r: Record<string, unknown>): string {
+  const canonical = JSON.stringify(Object.keys(r).sort().map(k => [k, String(r[k] ?? '').trim()]))
+  return createHash('sha256').update(canonical).digest('hex').slice(0, 24)
+}
+
+const keyOf = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+/** First non-empty value among `keys`, matching column names case- and punctuation-insensitively. */
 const str = (r: Record<string, unknown>, ...keys: string[]) => {
-  for (const k of keys) { const v = r[k]; if (v != null && String(v).trim() !== '') return String(v).trim() }
+  const byKey = new Map(Object.entries(r).map(([k, v]) => [keyOf(k), v]))
+  for (const k of keys) { const v = r[k] ?? byKey.get(keyOf(k)); if (v != null && String(v).trim() !== '') return String(v).trim() }
   return null
 }
 
@@ -31,7 +70,7 @@ export interface RegistrationParsed {
 }
 
 export function parseRegistration(r: Record<string, unknown>): RegistrationParsed | null {
-  const id = str(r, '_id')
+  const id = str(r, '_id') ?? rowId(r)
   const lobbyist = cleanName(str(r, 'Full Name', 'Lobbyist Name', 'Lobbyist', 'lobbyist_name'))
   if (!id || !lobbyist) return null
   return {
@@ -54,7 +93,7 @@ export interface ExpenditureParsed {
 }
 
 export function parseExpenditure(r: Record<string, unknown>): ExpenditureParsed | null {
-  const id = str(r, '_id')
+  const id = str(r, '_id') ?? rowId(r)
   const filer = cleanName(str(r, 'Full Name', 'Organization', 'Lobbyist Name', 'Filer'))
   if (!id || !filer) return null
   const org = str(r, 'Organization')
@@ -63,40 +102,58 @@ export function parseExpenditure(r: Record<string, unknown>): ExpenditureParsed 
     recordId: id, filer: (person ?? org)!, filerIsOrg: !person && !!org,
     period: str(r, 'Reporting Period', 'Period', 'Lobby Year'),
     category: str(r, 'Expenditure Category', 'Category', 'Type'),
-    amount: toAmount(r['Amount'] ?? r['Total Expenditures'] ?? r['Total']),
+    amount: toAmount(str(r, 'Amount', 'Total Expenditures', 'Total')),
     payee: cleanName(str(r, 'Payee', 'Vendor', 'Recipient')),
     url: str(r, 'View', 'URL'),
   }
 }
 
-async function findExpenditureResource(ckan: CkanClient, log: (m: string) => void): Promise<string | null> {
-  try {
-    for (const pkg of await ckan.packageSearch('lobbyist expenditure statements', 20)) {
-      if (!/lobby/i.test(pkg.title)) continue
-      for (const res of pkg.resources) if (res.datastore_active && /expend/i.test(`${pkg.title} ${res.name}`)) return res.id
-    }
-  } catch (e) { log(`expenditure resource discovery failed: ${(e as Error).message}`) }
-  return null
+// One download per dataset per warm function instance.
+const cache = new Map<Dataset, { at: number; url: string; rows: Record<string, string>[] }>()
+const CACHE_MS = 30 * 60_000
+
+async function loadDataset(dataset: Dataset): Promise<{ url: string; rows: Record<string, string>[] }> {
+  const hit = cache.get(dataset)
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit
+  const page = DATASET_PAGES[dataset]
+  const [url] = csvLinks(await fetchText(page), page)
+  if (!url) throw new Error(`no CSV download link on ${page}`)
+  const rows = parseCsv(await fetchText(url, { timeoutMs: 120_000 }))
+  const entry = { at: Date.now(), url, rows }
+  cache.set(dataset, entry)
+  return entry
 }
 
 export async function importBatch(db: Db, offset: number, batchSize: number, opts: ImportOptions = {}): Promise<BatchResult> {
   const log = opts.log ?? (() => {})
   const params = opts.params ?? {}
-  const dataset = (params.dataset as 'registrations' | 'expenditures' | undefined) ?? 'registrations'
   const result = emptyResult(offset)
 
   let page: SourcePage
-  let resourceId: string | undefined = params.resource
+  let dataset: Dataset
+  let url: string | null = null
   if (opts.pageSource) {
+    dataset = (params.dataset as Dataset | undefined) ?? 'registrations'
     page = await opts.pageSource(offset, batchSize, params)
   } else {
-    const ckan = new CkanClient(HAWAII_OPEN_DATA)
-    if (!resourceId) resourceId = dataset === 'registrations' ? REGISTRATION_RESOURCE : ((await findExpenditureResource(ckan, log)) ?? undefined)
-    if (!resourceId) return { ...result, done: true }
-    const r = await ckan.datastoreSearch(resourceId, { limit: batchSize, offset, sort: '_id asc' })
-    page = { records: r.records, total: r.total }
+    // --dataset=registrations|expenditures reads one file; otherwise the offset runs across both.
+    const order: Dataset[] = params.dataset ? [params.dataset as Dataset] : ['registrations', 'expenditures']
+    let base = 0
+    let found: { dataset: Dataset; rows: Record<string, string>[]; url: string; local: number } | null = null
+    let total = 0
+    for (const d of order) {
+      const { rows, url: u } = await loadDataset(d)
+      if (!found && offset < base + rows.length) found = { dataset: d, rows, url: u, local: offset - base }
+      base += rows.length
+      total = base
+    }
+    if (!found) return { ...result, done: true }
+    dataset = found.dataset
+    url = DATASET_PAGES[dataset]
+    const records = found.rows.slice(found.local, found.local + batchSize)
+    page = { records, total, done: offset + records.length >= total }
+    log(`${dataset}: rows ${found.local}–${found.local + records.length} of ${found.rows.length} (${found.url})`)
   }
-  const url: string | null = resourceId ? `${HAWAII_OPEN_DATA}/dataset/${resourceId}` : null
 
   for (const raw of page.records) {
     if (dataset === 'registrations') {
