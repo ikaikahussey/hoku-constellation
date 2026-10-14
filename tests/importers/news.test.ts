@@ -50,6 +50,11 @@ describe('news importer', () => {
       expect.objectContaining({ type: 'mentioned_in', from_name_raw: 'Office of Hawaiian Affairs', role: 'subject', match_status: 'matched', start_date: '2026-07-01' }),
     ]))
     expect(edges[0].attributes).toMatchObject({ mention_type: 'news', matched_on: 'name' })
+    const cursor = await db.one<{ feeds: Record<string, { items: number; error: string | null }> }>(`select metadata->'feeds' feeds from import_cursor where source = 'news'`)
+    expect(cursor!.feeds.civil_beat).toMatchObject({ items: 2, error: null })
+    expect(cursor!.feeds.ka_wai_ola).toMatchObject({ items: 1, error: null })
+    expect(cursor!.feeds.khon2.items).toBe(0)
+    expect(cursor!.feeds.khon2.error).toMatch(/^no items/)
   })
 
   it('routes an ambiguous name to review without an entity id', async () => {
