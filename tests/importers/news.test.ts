@@ -32,7 +32,18 @@ describe('news importer', () => {
   it('stores one article per feed item, tags existing entities, creates none; idempotent', async () => {
     const r = await runTwice(db, news, records, {}, 3)
     expect(r.entitiesCreated).toBe(0)
-    expect(r.edges).toBe(2)
+    const all = await edgesFor(db, 'news')
+    expect(all.filter(e => e.match_status === 'matched')).toHaveLength(2)
+    // People and organizations named in context but absent from the database are kept for review, never created.
+    const extracted = all.filter(e => e.match_status === 'unmatched')
+    expect(extracted.map(e => [e.from_name_raw, e.attributes.kind_guess, e.attributes.cue]).sort()).toEqual([
+      ['Ann Doe', 'person', 'said'],
+      ['Hawaiian Electric Industries', 'org', 'org:Industries'],
+      ['Nadine K. Nakamura', 'person', 'title:Rep'],
+      ['Public Utilities Commission', 'org', 'org:Commission'],
+    ])
+    expect(extracted.every(e => e.from_id === null && e.attributes.matched_on === 'extracted')).toBe(true)
+    expect(r.edges).toBe(6)
     const docs = await db.many<{ source_record_id: string; doc_type: string; doc_date: string | null; url: string; title: string; raw: Record<string, unknown>; body_text: string | null }>(
       `select source_record_id, doc_type, doc_date::text doc_date, url, title, raw, body_text from document where source = 'news' order by source_record_id`)
     expect(docs.map(d => d.source_record_id)).toEqual([
@@ -44,7 +55,7 @@ describe('news importer', () => {
     expect(docs[0].raw).toMatchObject({ outlet: 'civil_beat', outlet_name: 'Honolulu Civil Beat', author: 'Jane Reporter' })
     expect(docs[0].body_text).toContain('Docket No. 2024-0123')
     expect(docs[1].body_text).toBe('The council took no action. A vote is expected in July.')
-    const edges = await edgesFor(db, 'news')
+    const edges = (await edgesFor(db, 'news')).filter(e => e.match_status === 'matched')
     expect(edges).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'mentioned_in', from_name_raw: 'Josh Green', role: 'mentioned', match_status: 'matched', start_date: '2026-06-29', to_id: null }),
       expect.objectContaining({ type: 'mentioned_in', from_name_raw: 'Office of Hawaiian Affairs', role: 'subject', match_status: 'matched', start_date: '2026-07-01' }),

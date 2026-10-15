@@ -21,7 +21,7 @@ import { processRecord, emptyResult, type BatchResult, type EdgeInput } from '..
 import type { ImportOptions, SourcePage } from '../types'
 import { activeOutlets, getOutlet } from '@/lib/news/outlets'
 import { parseFeed, type FeedItem } from '@/lib/news/rss'
-import { tagArticle } from '@/lib/news/tagger'
+import { tagArticle, type Mention } from '@/lib/news/tagger'
 
 export const SOURCE_KEY = 'news'
 
@@ -48,6 +48,28 @@ async function recordFeedStatus(db: Db, status: Record<string, FeedStatus>) {
   await db.query(
     `update import_cursor set metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object('feeds', coalesce(metadata->'feeds', '{}'::jsonb) || $1::jsonb)
       where source = $2`, [JSON.stringify(status), SOURCE_KEY])
+}
+
+/**
+ * One tag as a `mentioned_in` edge. An ambiguous name (several candidates) goes to review; a person or
+ * organization identified only from context (not in the database) is stored `unmatched` with its kind
+ * guess and cue, so staff can add or link it.
+ */
+export function mentionEdge(m: Mention, outlet: string, date: string | null): EdgeInput {
+  return {
+    type: 'mentioned_in',
+    from: m.entityId
+      ? { entityId: m.entityId, rawName: m.surface }
+      : { entityId: null, rawName: m.surface, status: m.candidates ? 'review' : 'unmatched', confidence: null, created: false },
+    to: null,
+    role: m.role,
+    start_date: date,
+    attributes: {
+      mention_type: 'news', matched_on: m.matchedOn, outlet,
+      ...(m.candidates ? { candidates: m.candidates } : {}),
+      ...(m.matchedOn === 'extracted' ? { kind_guess: m.kind, cue: m.cue } : {}),
+    },
+  }
 }
 
 export function articleBody(item: Pick<FeedItem, 'description' | 'content'>): string | null {
@@ -113,16 +135,7 @@ export async function importBatch(db: Db, offset: number, batchSize: number, opt
           },
           edges: async ({ db: d }) => {
             const mentions = await tagArticle(d, { title: item.title, body, published: item.published })
-            return mentions.map((m): EdgeInput => ({
-              type: 'mentioned_in',
-              from: m.entityId
-                ? { entityId: m.entityId, rawName: m.surface }
-                : { entityId: null, rawName: m.surface, status: 'review', confidence: null, created: false },
-              to: null,
-              role: m.role,
-              start_date: hstDate(item.published),
-              attributes: { mention_type: 'news', matched_on: m.matchedOn, outlet: feed.outlet, ...(m.candidates ? { candidates: m.candidates } : {}) },
-            }))
+            return mentions.map(m => mentionEdge(m, feed.outlet, hstDate(item.published)))
           },
         }, result)
       } catch (e) { result.errors++; log(`${feed.outlet} ${item.guid}: ${(e as Error).message}`) }
