@@ -11,10 +11,25 @@
  *
  * Overlapping phrase matches keep the longest span ("Hawaiian Electric Industries" beats "Hawaiian
  * Electric"). A phrase that matches more than one entity is returned unresolved with the candidate ids
- * so it lands in the review queue rather than on the wrong profile.
+ * so it lands in the review queue rather than on the wrong profile. Two exceptions:
+ *   - organizations whose names are identical after normalizeOrg() are duplicates of one body, so the
+ *     best-connected one is tagged and the others are kept as `candidates` for merging;
+ *   - an acronym in lib/news/aliases.ts (UH, HECO, DLNR, …) is also tried as its expanded name.
+ * A person's three- or four-word name is also tried as first + last ("Joshua B. Green" → "Joshua
+ * Green"), and stored person names answer to their first + last form too (migration 005).
+ *
+ * Key people and organizations that are not in the database are still identified from context: a name
+ * after an official title ("Sen. Jane Doe", "Mayor Rick Blangiardi") or before or after "said", and an
+ * organization whose name ends in a word such as Department, Commission or Association. They are
+ * returned unresolved (no candidates) so they reach the review queue as `unmatched` mentions; nothing
+ * is created.
  */
 import type { Db } from '@/lib/db/types'
 import { normalize, normalizeOrg, matchByIdentifier, followMerge } from '@/lib/entity-match'
+import { ACRONYM_EXPANSIONS } from './aliases'
+
+/** Bumped whenever tagging rules change; lib/news/retag.ts re-tags stored articles when it differs. */
+export const TAGGER_VERSION = 2
 
 export type MentionKind = 'person' | 'org' | 'office' | 'bill' | 'docket'
 
@@ -23,11 +38,16 @@ export interface Mention {
   kind: MentionKind | null
   /** The text as it appeared in the article. */
   surface: string
-  matchedOn: 'name' | 'alias' | 'measure' | 'docket'
+  matchedOn: 'name' | 'alias' | 'measure' | 'docket' | 'acronym' | 'first_last' | 'extracted'
   /** 'subject' when the entity appears in the headline, otherwise 'mentioned'. */
   role: 'subject' | 'mentioned'
-  /** Entity ids sharing this phrase when it is ambiguous (entityId is then null). */
+  /**
+   * Entity ids sharing this phrase: when ambiguous (entityId is then null), or the duplicate
+   * organizations collapsed into entityId.
+   */
   candidates?: string[]
+  /** For extracted mentions (matchedOn 'extracted'): what identified the name ("title:Sen.", "said", "org:Commission"). */
+  cue?: string
 }
 
 export interface ArticleText { title: string; body: string | null; published: string | null }
@@ -49,6 +69,8 @@ export interface Candidate {
   spans: Array<[number, number]>
   inTitle: boolean
   acronym: boolean
+  /** Key is the first + last word of a 3–4 word phrase; only person names may match it. */
+  firstLast?: boolean
 }
 
 const isCap = (w: string) => /^[ʻ‘’']?[A-ZĀĒĪŌŪ]/.test(w)
@@ -124,8 +146,81 @@ function emitRun(run: Token[], inTitle: boolean, out: Map<string, Candidate>) {
         if (prev) { prev.spans.push([start, end]); prev.inTitle ||= inTitle; continue }
         out.set(key, { key, surface, spans: [[start, end]], inTitle, acronym: single })
       }
+      const fl = firstLastKey(surface)
+      if (fl && !out.has(fl)) out.set(fl, { key: fl, surface, spans: [[start, end]], inTitle, acronym: false, firstLast: true })
     }
   }
+}
+
+const NAME_SUFFIX = /^(jr|sr|ii|iii|iv)$/
+
+/** "Joshua B. Green" / "Mary Ann K. Smith Jr." → "joshua green" / "mary smith"; null unless 3–5 words. Mirrors migration 005. */
+export function firstLastKey(name: string): string | null {
+  const toks = normalize(name).split(' ').filter(Boolean)
+  while (toks.length && NAME_SUFFIX.test(toks[toks.length - 1])) toks.pop()
+  if (toks.length < 3 || toks.length > 5) return null
+  return `${toks[0]} ${toks[toks.length - 1]}`
+}
+
+// ---------------------------------------------------------------- key people and organizations
+
+const TITLES = [
+  'Gov', 'Governor', 'Lt. Gov', 'Lieutenant Governor', 'Sen', 'Senator', 'State Sen', 'Rep', 'Representative', 'State Rep',
+  'Mayor', 'Councilmember', 'Council Member', 'Councilwoman', 'Councilman', 'Council Chair', 'Council Chairman', 'Council Chairwoman',
+  'Speaker', 'Senate President', 'House Speaker', 'Attorney General', 'Prosecutor', 'Prosecuting Attorney', 'Judge', 'Justice', 'Chief Justice',
+  'Director', 'Deputy Director', 'Chairperson', 'Chair', 'Chairman', 'Chairwoman', 'Commissioner', 'Trustee', 'Superintendent',
+  'President', 'CEO', 'Chief Executive', 'Chief', 'Police Chief', 'Fire Chief', 'Secretary', 'Administrator', 'Executive Director',
+  'U.S. Sen', 'U.S. Rep', 'Congressman', 'Congresswoman', 'Delegate',
+]
+const TITLE_RE = new RegExp(`\\b(${TITLES.map(t => t.replace(/[.]/g, '\\.').replace(/ /g, '\\s+')).sort((a, b) => b.length - a.length).join('|')})\\.?\\s+((?:[A-ZĀĒĪŌŪʻ‘][\\wʻ‘'’āēīōū-]*\\.?\\s+){1,3}[A-ZĀĒĪŌŪʻ‘][\\wʻ‘'’āēīōū-]+)`, 'g')
+const PERSON_WORD = /^[A-ZĀĒĪŌŪʻ‘][A-Za-zʻ‘'’āēīōūĀĒĪŌŪ-]*\.?$/
+const NOT_PERSON_WORD = /^(The|A|An|And|Of|In|On|At|For|To|Hawai[ʻ‘']?i|Honolulu|Maui|Kaua[ʻ‘']?i|Oahu|O[ʻ‘']ahu|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|October|November|December|State|County|City|House|Senate|Department|Office|Board|Commission|Council|University|Police|Fire|Democrats?|Republicans?|He|She|They|It|This|That|But|When|After|Before)$/
+const SAID_BEFORE = /((?:[A-ZĀĒĪŌŪʻ‘][\wʻ‘'’āēīōū-]*\.?\s+){1,3}[A-ZĀĒĪŌŪʻ‘][\wʻ‘'’āēīōū-]+),?\s+(?:said|says|told|wrote|testified|announced)\b/g
+const SAID_AFTER = /\b(?:said|says|according to)\s+((?:[A-ZĀĒĪŌŪʻ‘][\wʻ‘'’āēīōū-]*\.?\s+){1,3}[A-ZĀĒĪŌŪʻ‘][\wʻ‘'’āēīōū-]+)/g
+const ORG_TAIL = /\b((?:[A-ZĀĒĪŌŪʻ‘][\wʻ‘'’āēīōū&.-]*\s+(?:(?:of|and|for|the|&)\s+)?){1,6}(Department|Commission|Council|Board|Authority|Association|Union|Foundation|University|College|Company|Corporation|Corp\.?|Inc\.?|LLC|Bank|Hospital|Medical Center|Trust|Agency|Committee|Coalition|Alliance|Institute|Society|Schools?|Party|Chamber of Commerce|Partners|Group|Holdings|Airlines|Electric|Industries|Federation|League|Bureau|Division|Office))\b/g
+const MAX_EXTRACTED = 12
+
+export interface KeyName { surface: string; kind: 'person' | 'org'; cue: string; inTitle: boolean }
+
+const TITLE_WORD = /^(Gov|Governor|Lt|Sen|Senator|Rep|Representative|Mayor|Councilmember|Councilwoman|Councilman|Speaker|Judge|Justice|Director|Chair|Chairperson|Chairman|Chairwoman|Commissioner|Trustee|Superintendent|President|Secretary|Chief|Dr|Mr|Mrs|Ms|Former|Acting|Interim|U\.S\.)\.?$/
+
+function cleanPerson(raw: string): string | null {
+  const words = raw.trim().replace(/['’]s$/, '').split(/\s+/)
+  // A sentence ends inside the match ("… said Kalani Akana. Rep. Nadine"): keep the part before it.
+  const end = words.findIndex((w, i) => i < words.length - 1 && /[a-zāēīōū]{2,}\.$/.test(w))
+  if (end >= 0) { words.splice(end + 1); words[end] = words[end].slice(0, -1) }
+  while (words.length && (NOT_PERSON_WORD.test(words[0]) || TITLE_WORD.test(words[0]))) words.shift()
+  while (words.length && NOT_PERSON_WORD.test(words[words.length - 1])) words.pop()
+  if (words.length < 2 || words.length > 4 || !words.every(w => PERSON_WORD.test(w))) return null
+  if (words.some(w => NOT_PERSON_WORD.test(w))) return null
+  return words.join(' ')
+}
+
+function cleanOrg(raw: string): string | null {
+  const words = raw.trim().replace(/\s+/g, ' ').split(' ')
+  while (words.length && /^(The|A|An|and|of|for|the|&|In|On|At|By|From|With|After|Before|When|While)$/.test(words[0])) words.shift()
+  if (words.length < 2) return null
+  return words.join(' ')
+}
+
+/** People and organizations an article identifies by context, whether or not they are in the database. */
+export function keyNames(title: string, body: string | null): KeyName[] {
+  const out = new Map<string, KeyName>()
+  const add = (surface: string | null, kind: KeyName['kind'], cue: string, inTitle: boolean) => {
+    if (!surface) return
+    const key = `${kind}:${normalize(surface)}`
+    const prev = out.get(key)
+    if (prev) { prev.inTitle ||= inTitle; return }
+    out.set(key, { surface, kind, cue, inTitle })
+  }
+  for (const [text, inTitle] of [[title, true], [body ?? '', false]] as const) {
+    for (const m of text.matchAll(TITLE_RE)) add(cleanPerson(m[2]), 'person', `title:${m[1].replace(/\s+/g, ' ')}`, inTitle)
+    for (const m of text.matchAll(SAID_BEFORE)) add(cleanPerson(m[1]), 'person', 'said', inTitle)
+    for (const m of text.matchAll(SAID_AFTER)) add(cleanPerson(m[1]), 'person', 'said', inTitle)
+    // Headlines are title-cased, so an organization's extent cannot be read from capitalization there.
+    if (!inTitle) for (const m of text.matchAll(ORG_TAIL)) add(cleanOrg(m[1]), 'org', `org:${m[2]}`, inTitle)
+  }
+  return [...out.values()].slice(0, MAX_EXTRACTED)
 }
 
 // ---------------------------------------------------------------- measures and dockets
@@ -192,50 +287,86 @@ export async function tagArticle(db: Db, article: ArticleText): Promise<Mention[
   }
 
   const candidates = candidatePhrases(article.title, article.body)
-  if (!candidates.length) return mentions
+  const keyed = keyNames(article.title, article.body)
+  if (!candidates.length && !keyed.length) return mentions
   const byKey = new Map(candidates.map(c => [c.key, c]))
-  const rows = await db.many<EntityHit>(
-    `select id, kind, name, aliases, merged_into_id, public.entity_match_keys(kind, name, aliases) keys
-       from entity
-      where kind in ('person', 'org', 'office')
-        and public.entity_match_keys(kind, name, aliases) && $1::text[]`,
-    [[...byKey.keys()]])
+  // Curated acronym expansions: expanded key → the acronym's candidate.
+  const expansions = new Map<string, Candidate>()
+  for (const c of candidates) {
+    if (!c.acronym) continue
+    for (const full of ACRONYM_EXPANSIONS[c.surface] ?? []) for (const k of [normalize(full), normalizeOrg(full)]) if (k && !byKey.has(k)) expansions.set(k, c)
+  }
+  const rows = await db.many<EntityHit & { degree: number }>(
+    `select e.id, e.kind, e.name, e.aliases, e.merged_into_id, public.entity_match_keys(e.kind, e.name, e.aliases) keys,
+            (select count(*)::int from edge x where x.from_id = e.id or x.to_id = e.id) degree
+       from entity e
+      where e.kind in ('person', 'org', 'office')
+        and public.entity_match_keys(e.kind, e.name, e.aliases) && $1::text[]`,
+    [[...byKey.keys(), ...expansions.keys()]])
 
-  // key → distinct surviving entities
-  const hitsByKey = new Map<string, Map<string, { kind: MentionKind; viaAlias: boolean }>>()
+  // candidate key → distinct surviving entities
+  const hitsByKey = new Map<string, Map<string, { kind: MentionKind; via: Mention['matchedOn']; name: string; degree: number }>>()
   for (const r of rows) {
     const id = r.merged_into_id ? await followMerge(db, r.id) : r.id
     const nameKeys = new Set([normalize(r.name), r.kind === 'org' ? normalizeOrg(r.name) : ''])
     for (const k of r.keys) {
-      const c = byKey.get(k)
+      const direct = byKey.get(k)
+      const expanded = direct ? undefined : expansions.get(k)
+      const c = direct ?? expanded
       if (!c) continue
-      // Acronyms only match an org/office alias or name that is itself the acronym.
-      if (c.acronym && (r.kind === 'person' || k !== normalize(c.surface))) continue
-      const m = hitsByKey.get(k) ?? new Map()
-      if (!m.has(id)) m.set(id, { kind: r.kind, viaAlias: !nameKeys.has(k) })
-      hitsByKey.set(k, m)
+      if (expanded && r.kind === 'person') continue
+      // Acronyms only match an org/office alias or name that is itself the acronym (or a curated expansion).
+      if (direct && c.acronym && (r.kind === 'person' || k !== normalize(c.surface))) continue
+      if (c.firstLast && r.kind !== 'person') continue
+      const via: Mention['matchedOn'] = expanded ? 'acronym' : c.firstLast ? 'first_last' : nameKeys.has(k) ? 'name' : 'alias'
+      const m = hitsByKey.get(c.key) ?? new Map()
+      if (!m.has(id) || (m.get(id).via === 'acronym' && !expanded)) m.set(id, { kind: r.kind, via, name: r.name, degree: r.degree })
+      hitsByKey.set(c.key, m)
     }
   }
 
   // Longest phrase first; a phrase counts only where it occurs outside every accepted longer phrase
   // ("Hawaiian Electric" inside "Hawaiian Electric Industries" is not a second mention).
   const len = (c: Candidate) => c.spans[0][1] - c.spans[0][0]
-  const matched = [...hitsByKey.keys()].map(k => byKey.get(k)!).sort((a, b) => len(b) - len(a))
+  const matched = [...hitsByKey.keys()].map(k => byKey.get(k)!).sort((a, b) => len(b) - len(a) || Number(!!a.firstLast) - Number(!!b.firstLast))
   const taken: Array<[number, number]> = []
   for (const c of matched) {
-    const free = c.spans.filter(([s, e]) => !taken.some(([ts, te]) => ts <= s && e <= te && te - ts > e - s))
+    const free = c.spans.filter(([s, e]) => !taken.some(([ts, te]) => ts <= s && e <= te && (te - ts > e - s || c.firstLast)))
     if (!free.length) continue
-    taken.push(...free)
     const hits = hitsByKey.get(c.key)!
     const role = free.some(([s]) => s < article.title.length) ? 'subject' : 'mentioned'
-    if (hits.size === 1) {
-      const [[id, h]] = [...hits]
-      add({ entityId: id, kind: h.kind, surface: c.surface, matchedOn: h.viaAlias ? 'alias' : 'name', role })
+    const ids = [...hits.keys()].sort()
+    const pick = hits.size === 1 ? ids[0] : duplicateOrg(hits)
+    if (pick) {
+      taken.push(...free)
+      const h = hits.get(pick)!
+      add({ entityId: pick, kind: h.kind, surface: c.surface, matchedOn: h.via, role, ...(hits.size > 1 ? { candidates: ids } : {}) })
     } else {
-      const ids = [...hits.keys()].sort()
       if (ids.every(id => seen.has(id))) continue
+      taken.push(...free)
       add({ entityId: null, kind: null, surface: c.surface, matchedOn: 'name', role, candidates: ids })
     }
   }
+
+  // Context-identified people and organizations that no database match covered.
+  const covered = (surface: string) => {
+    const k = normalize(surface)
+    return mentions.some(m => {
+      const mk = normalize(m.surface)
+      return mk === k || mk.includes(k) || k.includes(mk)
+    })
+  }
+  for (const n of keyed) {
+    if (covered(n.surface)) continue
+    add({ entityId: null, kind: n.kind, surface: n.surface, matchedOn: 'extracted', role: n.inTitle ? 'subject' : 'mentioned', cue: n.cue })
+  }
   return mentions
+}
+
+/** Several organizations with the same normalized name are one body entered twice: tag the best connected. */
+function duplicateOrg(hits: Map<string, { kind: MentionKind; name: string; degree: number }>): string | null {
+  const list = [...hits].map(([id, h]) => ({ id, ...h }))
+  if (!list.every(h => h.kind === 'org' || h.kind === 'office')) return null
+  if (new Set(list.map(h => normalizeOrg(h.name))).size !== 1) return null
+  return list.sort((a, b) => b.degree - a.degree || a.id.localeCompare(b.id))[0].id
 }

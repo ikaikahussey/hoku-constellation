@@ -1,17 +1,17 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getServiceDb } from '@/lib/db/service'
-import { listNews, newsOutletCounts, getEntity } from '@/lib/db/queries'
+import { listNewsStories, newsOutletCounts, getEntity } from '@/lib/db/queries'
 import { getCurrentUser } from '@/lib/auth'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
-import { NewsList } from '@/components/news/NewsList'
+import { StoryList } from '@/components/news/StoryList'
 
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: 'News',
-  description: 'Reporting from Hawaiʻi news outlets, summarized and tagged with the people, organizations, bills, and dockets HOKU Insider tracks.',
+  description: 'Reporting from Hawaiʻi news outlets, grouped into stories, summarized, and tagged with the people, organizations, bills, and dockets HOKU Insider tracks.',
 }
 
 const PAGE_SIZE = 50
@@ -37,7 +37,7 @@ export default async function NewsPage({ searchParams }: { searchParams: Promise
   const pageNum = Math.max(1, Number.parseInt(first(sp.page) || '1', 10) || 1)
   const [db, user] = await Promise.all([getServiceDb(), getCurrentUser()])
   const [{ rows, total }, outlets, tagged] = await Promise.all([
-    listNews(db, { outlet: outlet || undefined, entityId: entity || undefined, limit: PAGE_SIZE, offset: (pageNum - 1) * PAGE_SIZE }),
+    listNewsStories(db, { outlet: outlet || undefined, entityId: entity || undefined, limit: PAGE_SIZE, offset: (pageNum - 1) * PAGE_SIZE }),
     newsOutletCounts(db),
     entity ? getEntity(db, entity) : Promise.resolve(null),
   ])
@@ -50,8 +50,9 @@ export default async function NewsPage({ searchParams }: { searchParams: Promise
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2">News</h1>
           <p className="text-muted max-w-3xl">
-            Reporting from Hawaiʻi news outlets, read from their public feeds. Each story links to the outlet,
-            carries a short summary, and is tagged with the people, organizations, bills, and dockets in HOKU Insider it names.
+            Reporting from Hawaiʻi news outlets, read from their public feeds. Articles about the same event are grouped
+            into one story with a common headline and summary, and links to each outlet’s version. Stories are tagged with
+            the people, organizations, bills, and dockets in HOKU Insider they name.
           </p>
           {tagged && (
             <p className="text-sm mt-2">
@@ -80,7 +81,7 @@ export default async function NewsPage({ searchParams }: { searchParams: Promise
               {total.toLocaleString('en-US')} {total === 1 ? 'story' : 'stories'}
               {pageCount > 1 && ` · page ${pageNum} of ${pageCount}`}
             </p>
-            <NewsList articles={rows} />
+            <StoryList stories={rows} />
             {pageCount > 1 && (
               <nav aria-label="Pagination" className="flex items-center justify-between mt-8 text-sm">
                 {pageNum > 1 ? <Link href={newsHref({ outlet, entity, page: pageNum - 1 })} rel="prev">← Previous</Link> : <span className="text-muted">← Previous</span>}
