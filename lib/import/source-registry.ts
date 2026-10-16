@@ -109,7 +109,8 @@ export const SOURCE_REGISTRY: SourceDefinition[] = [
     key: 'boards', name: 'Boards & Commissions — appointments', agency: 'Office of the Governor',
     jurisdiction: 'state', accessMethod: 'html', baseUrl: 'https://boards.hawaii.gov', urls: ['https://boards.hawaii.gov/sitemap.xml'],
     docTypes: ['appointment'], edgeTypes: ['appointed_to'], entityKinds: ['person', 'office'], cadence: 'weekly', tier: 1, status: 'live', restartOnComplete: true,
-    notes: 'WordPress multisite: board list from the root sitemap index, rosters from each board subsite.',
+    paused: true,
+    notes: 'WordPress multisite: board list from the root sitemap index, rosters from each board subsite. Paused (Oct 2026): every board subsite returns a "Site Under Maintenance" page and the sitemap answers HTTP 429; the probe keeps checking two subsites.',
   },
   {
     key: 'governor_orders', name: 'Governor — executive orders & proclamations', agency: 'Office of the Governor',
