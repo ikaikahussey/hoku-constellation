@@ -274,7 +274,7 @@ export async function importBatch(db: Db, offset: number, batchSize: number, opt
     resourceId = dataset.id
     kind = dataset.kind
     const take = Math.min(batchSize, Math.max(1, (dataset.rows ?? Infinity) - local))
-    const rows = await soda.query(dataset.id, { limit: take, offset: local, order: ':id', select: ':id,*' })
+    const rows = await soda.queryWithIds(dataset.id, { limit: take, offset: local })
     page = { records: rows.map(r => rekeyRow(r, dataset.fields)), total, done: offset + rows.length >= total }
     if (dataset.rows != null) datasetEnd = offset - local + dataset.rows
   }

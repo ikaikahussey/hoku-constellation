@@ -47,6 +47,26 @@ describe('ethics_lobbyists CSV route', () => {
     expect(mod.parseRegistration({ 'FULL NAME': 'Pua, Leilani', 'lobby_year': '2025' })).toMatchObject({ lobbyist: 'Pua, Leilani', lobbyYear: '2025' })
     expect(mod.parseRegistration(rows[3])).toBeNull()
   })
+  it('parses the expenditure statement CSV: total, period, filing date, and the PDF link', () => {
+    const rows = parseCsv(fixture('ethics/expenditures.csv'))
+    expect(mod.parseExpenditure(rows[1])).toMatchObject({
+      filer: 'Rolf, David H.', filerIsOrg: false, amount: 1250.5, period: 'Mar. 1-Apr. 30, 2019', payee: null, date: '2019-05-31',
+      url: 'http://files.hawaii.gov/ethics/lobexp/2019/LOB-1272-2019-02_Kfx10-18263.pdf',
+    })
+    expect(mod.viewUrl('Form (http://x.example/a.pdf)')).toBe('http://x.example/a.pdf')
+  })
+  it('stores payee-less expenditure statements as documents without edges', async () => {
+    const xdb = await createTestDb()
+    try {
+      const r = await runTwice(xdb, mod, parseCsv(fixture('ethics/expenditures.csv')), { dataset: 'expenditures' }, 2)
+      expect(r.edges).toBe(0)
+      const docs = await xdb.many<{ title: string; doc_date: string }>(`select title, doc_date::text doc_date from document where doc_type = 'lobbyist_expenditure' order by doc_date`)
+      expect(docs).toEqual([
+        { title: 'Stacy Ellamar lobbying expenditure statement, Jan. 1-Feb. 28, 2018 ($0.00)', doc_date: '2018-03-14' },
+        { title: 'David H. Rolf lobbying expenditure statement, Mar. 1-Apr. 30, 2019 ($1,250.50)', doc_date: '2019-05-31' },
+      ])
+    } finally { await xdb.end() }
+  })
   it('imports CSV rows idempotently', async () => {
     const csvDb = await createTestDb()
     try {
@@ -70,13 +90,11 @@ describe('ethics_lobbyists importer', () => {
     expect(byClient['Alexander & Baldwin, Inc.']).toMatchObject({ match_status: 'review', end_date: '2025-06-30' })
     expect(edges.find(e => e.to_name_raw === null)).toBeUndefined()
   })
-  it('imports expenditure statements as spent_with edges', async () => {
+  it('imports expenditure statements; a spent_with edge only where a payee is named', async () => {
     const r = await runTwice(db, mod, expenditures, { dataset: 'expenditures', resource: 'exp' })
-    expect(r.edges).toBe(2)
+    expect(r.edges).toBe(1)
     const edges = (await edgesFor(db, 'ethics_lobbyists')).filter(e => e.type === 'spent_with')
-    expect(edges).toHaveLength(2)
-    expect(edges.find(e => e.from_name_raw === 'Hawaii Gas')).toMatchObject({ amount: '12500.00', role: 'Media Advertising', start_date: '2025-01-01', end_date: '2025-12-31' })
-    // Person filer already created by the registration run → matched
-    expect(edges.find(e => e.from_name_raw === 'Smith, John A.')?.from_id).not.toBeNull()
+    expect(edges).toHaveLength(1)
+    expect(edges[0]).toMatchObject({ from_name_raw: 'Hawaii Gas', to_name_raw: 'Pacific Media Group', amount: '12500.00', role: 'Media Advertising', start_date: '2025-01-01', end_date: '2025-12-31' })
   })
 })

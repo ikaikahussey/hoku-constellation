@@ -23,10 +23,10 @@ describe('importer scheduling', () => {
   it('selects due live sources, never-run first, then least recently run', async () => {
     const db = await createTestDb()
     try {
-      await db.query(`insert into import_cursor (source, cursor_offset, status, last_run_at) values ('csc', 5000, 'complete', $1), ('fec', 100, 'running', $2), ('boards', 0, 'complete', $3)`,
+      await db.query(`insert into import_cursor (source, cursor_offset, status, last_run_at) values ('csc', 5000, 'complete', $1), ('fec', 100, 'running', $2), ('ethics_lobbyists', 0, 'complete', $3)`,
         [iso(3600_000), iso(60_000), iso(8 * 24 * 3600_000)])
-      const due = await selectDueSources(db, { live: ['csc', 'fec', 'boards', 'spo_hands', 'puc'], now })
-      expect(due.map(d => d.key)).toEqual(['spo_hands', 'boards']) // csc fresh, fec owned by another tick, puc paused; spo_hands never run goes before boards (weekly elapsed)
+      const due = await selectDueSources(db, { live: ['csc', 'fec', 'ethics_lobbyists', 'spo_hands', 'puc', 'boards'], now })
+      expect(due.map(d => d.key)).toEqual(['spo_hands', 'ethics_lobbyists']) // csc fresh, fec owned by another tick, puc and boards paused; spo_hands never run goes before ethics_lobbyists (weekly elapsed)
       // A source stuck at the head of the registry does not starve one that has never run.
       await db.query(`insert into import_cursor (source, cursor_offset, status, last_run_at) values ('capitol_testimony', 0, 'error', $1)`, [iso(1000)])
       const fair = await selectDueSources(db, { live: ['capitol_testimony', 'news'], now })

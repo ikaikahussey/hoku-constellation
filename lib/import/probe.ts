@@ -55,6 +55,8 @@ const CANDIDATES: Record<string, string[]> = {
     'https://hicscdata.hawaii.gov/robots.txt',
     'https://hicscdata.hawaii.gov/api/catalog/v1?domains=hicscdata.hawaii.gov&only=dataset&limit=100',
     'https://hicscdata.hawaii.gov/resource/jexd-xbcg.json?$limit=2',
+    'https://hicscdata.hawaii.gov/resource/3maa-4fgr.json?$limit=2&$order=:id&$select=:*,%20*',
+    'https://hicscdata.hawaii.gov/resource/3maa-4fgr.json?$limit=2&$order=:id&$$exclude_system_fields=false',
   ],
   fec: [
     'https://www.fec.gov/data/browse-data/?tab=bulk-data',
