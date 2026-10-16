@@ -13,6 +13,10 @@
  *
  * Registration columns (observed): Full Name, Organization, Lobby Year, Registration Date,
  * Termination Date, Amended, Original, View (PDF url).
+ * Expenditure columns (observed Oct 2026): Lobbyist Name, View ("Form (<PDF url>)"), Total Expense,
+ * Lobby Period ("Jan. 1-Feb. 28, 2018"), Year, Date Filed, Original, Amended. The statement reports a
+ * total for the period and names no payee, so it is stored as a document only; a `spent_with` edge is
+ * written only when a row names a payee.
  */
 import { createHash } from 'node:crypto'
 import { load } from 'cheerio'
@@ -90,6 +94,13 @@ export interface ExpenditureParsed {
   amount: number | null
   payee: string | null
   url: string | null
+  /** Filing date, or the start of the period when there is none. */
+  date: string | null
+}
+
+/** "Form (http://files.hawaii.gov/…pdf)" or a bare URL → the URL. */
+export function viewUrl(v: string | null): string | null {
+  return v?.match(/https?:\/\/[^\s)]+/)?.[0] ?? null
 }
 
 export function parseExpenditure(r: Record<string, unknown>): ExpenditureParsed | null {
@@ -98,13 +109,15 @@ export function parseExpenditure(r: Record<string, unknown>): ExpenditureParsed 
   if (!id || !filer) return null
   const org = str(r, 'Organization')
   const person = str(r, 'Full Name', 'Lobbyist Name')
+  const period = str(r, 'Lobby Period', 'Reporting Period', 'Period', 'Lobby Year')
   return {
     recordId: id, filer: (person ?? org)!, filerIsOrg: !person && !!org,
-    period: str(r, 'Reporting Period', 'Period', 'Lobby Year'),
+    period,
     category: str(r, 'Expenditure Category', 'Category', 'Type'),
-    amount: toAmount(str(r, 'Amount', 'Total Expenditures', 'Total')),
+    amount: toAmount(str(r, 'Total Expense', 'Amount', 'Total Expenditures', 'Total')),
     payee: cleanName(str(r, 'Payee', 'Vendor', 'Recipient')),
-    url: str(r, 'View', 'URL'),
+    url: viewUrl(str(r, 'View', 'URL')),
+    date: toIsoDate(str(r, 'Date Filed')) ?? periodRange(period ?? str(r, 'Year')).start,
   }
 }
 
@@ -191,13 +204,16 @@ export async function importBatch(db: Db, offset: number, batchSize: number, opt
         await processRecord(db, {
           document: {
             source: SOURCE_KEY, source_record_id: `expenditure:${p.recordId}`, doc_type: 'lobbyist_expenditure',
-            title: `${p.filer} lobbying expenditure ${p.period ?? ''}`.trim(), doc_date: range.start, url: p.url ?? url, raw,
+            title: `${canonicalPersonName(p.filer)} lobbying expenditure statement${p.period ? `, ${p.period}` : ''}${p.amount != null ? ` ($${p.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })})` : ''}`,
+            doc_date: p.date, url: p.url ?? url, raw,
           },
           edges: async ({ db: d }) => {
+            // A statement total with no payee names no relationship; the document alone records it.
+            if (!p.payee) return []
             const from = p.filerIsOrg
               ? await resolveRef(d, { kind: 'org', rawName: p.filer })
               : await resolveRef(d, { kind: 'person', rawName: p.filer, canonicalName: canonicalPersonName(p.filer) })
-            const to = p.payee ? await resolveRef(d, { kind: 'org', rawName: p.payee }) : { entityId: null, rawName: `Lobbying (${p.category ?? 'expenditure'})` }
+            const to = await resolveRef(d, { kind: 'org', rawName: p.payee })
             return [{ type: 'spent_with', from, to, role: p.category, amount: p.amount, start_date: range.start, end_date: range.end, attributes: { period: p.period } }]
           },
         }, result)
