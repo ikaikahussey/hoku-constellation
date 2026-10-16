@@ -1,7 +1,7 @@
 /**
  * Socrata SODA 2.x client (data.honolulu.gov, hicscdata.hawaii.gov). Uses SOCRATA_APP_TOKEN when present.
  */
-import { fetchJson } from '../http'
+import { fetchJson, HttpError } from '../http'
 
 export class SocrataClient {
   constructor(private domain: string, private appToken = process.env.SOCRATA_APP_TOKEN) {}
@@ -16,10 +16,24 @@ export class SocrataClient {
     return u.toString()
   }
 
-  async query<T = Record<string, unknown>>(datasetId: string, opts: { limit?: number; offset?: number; where?: string; order?: string; select?: string; q?: string } = {}): Promise<T[]> {
+  async query<T = Record<string, unknown>>(datasetId: string, opts: { limit?: number; offset?: number; where?: string; order?: string; select?: string; q?: string; systemFields?: boolean } = {}): Promise<T[]> {
     return fetchJson<T[]>(this.url(datasetId, {
       $limit: opts.limit ?? 1000, $offset: opts.offset ?? 0, $where: opts.where, $order: opts.order ?? ':id', $select: opts.select, $q: opts.q,
+      ...(opts.systemFields ? { $$exclude_system_fields: 'false' } : {}),
     }), { headers: this.headers() })
+  }
+
+  /**
+   * Rows including the row id `:id`. SoQL `$select=:*, *` is tried first; datasets that reject it
+   * (HTTP 400) are read with `$$exclude_system_fields=false` instead.
+   */
+  async queryWithIds<T = Record<string, unknown>>(datasetId: string, opts: { limit?: number; offset?: number; q?: string } = {}): Promise<T[]> {
+    try {
+      return await this.query<T>(datasetId, { ...opts, order: ':id', select: ':*, *' })
+    } catch (e) {
+      if (!(e instanceof HttpError) || e.status !== 400) throw e
+      return this.query<T>(datasetId, { ...opts, order: ':id', systemFields: true })
+    }
   }
 
   async count(datasetId: string, where?: string): Promise<number> {

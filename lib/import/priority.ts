@@ -93,7 +93,7 @@ const defaultFetchers = (): Required<PriorityFetchers> => {
       return list
     },
     cscSearch: async (id, q, offset, limit) => {
-      const rows = await soda.query(id, { q, offset, limit, order: ':id', select: ':id,*' })
+      const rows = await soda.queryWithIds(id, { q, offset, limit })
       // SODA reports no total; a short page ends the query.
       return { records: rows.map(r => rekeyRow(r, fields.get(id))), total: rows.length < limit ? offset + rows.length : Number.MAX_SAFE_INTEGER }
     },
