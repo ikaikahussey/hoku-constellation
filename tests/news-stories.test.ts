@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createTestDb, type TestDb } from './helpers/pglite'
 import { normalize } from '@/lib/entity-match'
-import { clusterArticles, rebuildStories, summarizeStories, storyFacts, type StoryArticle } from '@/lib/news/stories'
+import { clusterArticles, rebuildStories, summarizeStories, storyFacts, isRoutine, stem, type StoryArticle } from '@/lib/news/stories'
 import { tagArticle, keyNames, firstLastKey, TAGGER_VERSION } from '@/lib/news/tagger'
 import { retagArticles, retagPending, RETAG_SOURCE } from '@/lib/news/retag'
 import { listNewsStories, storyTags } from '@/lib/db/queries/news'
@@ -50,6 +50,42 @@ describe('clusterArticles', () => {
   it('is independent of input order', () => {
     const again = clusterArticles([...corpus].reverse())
     expect(again.map(g => g.members.map(m => m.id).sort().join()).sort()).toEqual(groups.map(g => g.members.map(m => m.id).sort().join()).sort())
+  })
+})
+
+describe('clusterArticles guards (from production tuning)', () => {
+  it('never groups routine features such as forecasts, cartoons and listings', () => {
+    expect(isRoutine('Kauai Surf Forecast for October 12, 2026')).toBe(true)
+    expect(isRoutine('Editorial cartoon for Monday, October 12, 2026')).toBe(true)
+    expect(isRoutine('Tuesday Weather | Showers continue on the Big Island')).toBe(true)
+    expect(isRoutine('Best LLM Training Data Providers (2026) Report Published by Metaclade Research')).toBe(true)
+    expect(isRoutine('Aloha Tower reopens for centennial celebration')).toBe(false)
+    const g = clusterArticles([
+      art('s1', 'Kauai Surf Forecast for October 12, 2026', 'Surf along north facing shores will be small.', 'kauai_now', 0),
+      art('s2', 'Hawaii County Surf Forecast for October 12, 2026', 'Surf along north facing shores will be small.', 'big_island_now', 1),
+    ])
+    expect(g).toHaveLength(2)
+  })
+  it('does not build a story out of one outlet\'s own series', () => {
+    const g = clusterArticles([
+      art('v1', 'Voting explainer: 2026 Kauaʻi charter amendment ballot questions', 'Here is what the charter amendments would do.', 'hpr', 0),
+      art('v2', 'Voting explainer: 2026 Honolulu charter amendment ballot questions', 'Here is what the charter amendments would do.', 'hpr', 2),
+    ])
+    expect(g).toHaveLength(2)
+  })
+  it('requires a weak match to share a rare headline word, and ignores generic incident words', () => {
+    const filler = Array.from({ length: 30 }, (_, i) => art(`f${i}`, `Filler headline number ${i} about crash injured seriously topic${i}`, `Body ${i}.`, `o${i}`, 100 + i))
+    const g = clusterArticles([
+      art('x1', 'Two seriously injured in vehicle crash into tree near Ward Avenue', 'Two people were seriously injured Monday.', 'star_advertiser', 0),
+      art('x2', 'Motorcyclist seriously injured in crash near Hawaii Pacific University', 'A motorcyclist was seriously injured Monday.', 'hawaii_news_now', 1),
+      art('w1', 'Police investigate Waipahu stabbing that left man injured', 'A man was stabbed in Waipahu.', 'kitv', 0),
+      art('w2', 'Waipahu stabbing suspect, 26, sought by police', 'Police seek a suspect in the Waipahu stabbing.', 'star_advertiser', 2),
+      ...filler,
+    ])
+    const of = (id: string) => g.find(x => x.members.some(m => m.id === id))!.members.map(m => m.id).sort()
+    expect(of('x1')).toEqual(['x1'])
+    expect(of('w1')).toEqual(['w1', 'w2'])
+    expect(stem('reopening')).toBe(stem('reopens'))
   })
 })
 

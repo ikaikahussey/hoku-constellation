@@ -9,7 +9,10 @@
  *   - its best cosine similarity to a member, plus a bonus for shared database tags, reaches JOIN_AT, and
  *   - its average similarity to the members reaches MEAN_AT (so a chain of loosely related stories
  *     does not snowball into one).
- * Identical headlines (syndicated copies) always join.
+ * Identical headlines (syndicated copies) always join. Otherwise an article joins only through an article
+ * from a different outlet: one outlet's own series (daily forecasts, a run of explainers) is not a story.
+ * Routine features (forecasts, cartoons, listings, obituaries, briefs, press-release wire items; see
+ * ROUTINE) are never grouped.
  *
  * Storage (`rebuildStories`): ax_news_story + ax_news_story_article (migration 005), recomputed for the
  * articles of the last REBUILD_DAYS days plus any article not yet in a story. A story is keyed by its
@@ -31,6 +34,8 @@ export const JOIN_AT = 0.42
 export const MEAN_AT = 0.25
 export const TAG_BONUS = 0.2
 export const REBUILD_DAYS = 30
+/** A join below this similarity must share a rare headline word (a place, a name) with the article it matches. */
+export const ANCHOR_BELOW = 0.5
 const BODY_TOKENS = 80
 const LEAD_AUTHOR = 'system:lead_article'
 const MAX_FACT_ARTICLES = 8
@@ -40,6 +45,26 @@ const STORY_SENTENCES = 3
 const STOP = new Set(('a about above after again against all also am an and any are as at be because been before being below between both but by can could did do does doing down during each few for from further had has have having he her here hers herself him himself his how i if in into is it its itself just me more most my no nor not now of off on once only or other our ours out over own same she should so some such than that the their theirs them then there these they this those through to too under until up very was we were what when where which while who whom why will with would you your yours ' +
   'said says say new news one two three year years week day monday tuesday wednesday thursday friday saturday sunday ' +
   'january february march april may june july august september october november december hawaii hawaiian honolulu').split(' '))
+
+/** Recurring features that resemble each other every day but are not the same story. */
+export const ROUTINE: RegExp[] = [
+  /\b(surf|weather|marine) forecast\b/i,
+  /^first alert forecast\b/i,
+  /^\w+day weather\s*\|/i,
+  /^editorial cartoon\b/i,
+  /^television and radio\b/i,
+  /^obituaries\b/i,
+  /^(news|police) (in )?briefs?\b/i,
+  /^(letters?|letters to the editor)\b/i,
+  /\breport published by\b/i,
+  /\b(press release|sponsored)\b/i,
+]
+
+export const isRoutine = (title: string) => ROUTINE.some(r => r.test(title))
+
+/** Incident words that recur across unrelated stories; never an anchor however rare they are in a window. */
+const GENERIC = new Set(['crash', 'collision', 'injur', 'injured', 'serious', 'seriously', 'critical', 'killed', 'kill', 'dies', 'die', 'dead', 'death', 'fatal',
+  'police', 'officer', 'man', 'woman', 'teen', 'driver', 'motorcyclist', 'pedestrian', 'moped', 'vehicle', 'fire', 'arrest', 'arrested', 'missing', 'hospitaliz', 'condition'].map(w => stem(w)))
 
 export interface StoryArticle {
   id: string
@@ -59,8 +84,14 @@ export interface StoryGroup {
   leadId: string
 }
 
+/** Light suffix stripping so "reopens", "reopened" and "reopening" count as one word. */
+export function stem(t: string): string {
+  if (t.length <= 4 || /^\d+$/.test(t)) return t
+  return t.replace(/(?:ings?|edly|ed|es|s)$/, '') || t
+}
+
 export function tokens(text: string): string[] {
-  return normalize(text).split(' ').filter(t => t.length >= 3 && !STOP.has(t) && !/^\d{1,2}$/.test(t))
+  return normalize(text).split(' ').filter(t => t.length >= 3 && !STOP.has(t) && !/^\d{1,2}$/.test(t)).map(stem)
 }
 
 type Vec = Map<string, number>
@@ -75,7 +106,7 @@ function vectors(articles: StoryArticle[]): Vec[] {
   const df = new Map<string, number>()
   for (const tf of tfs) for (const t of tf.keys()) df.set(t, (df.get(t) ?? 0) + 1)
   const n = articles.length
-  return tfs.map(tf => {
+  const vecs = tfs.map(tf => {
     const v: Vec = new Map()
     let norm = 0
     for (const [t, f] of tf) {
@@ -87,6 +118,7 @@ function vectors(articles: StoryArticle[]): Vec[] {
     for (const [t, w] of v) v.set(t, w / norm)
     return v
   })
+  return vecs
 }
 
 function cosine(a: Vec, b: Vec): number {
@@ -108,16 +140,31 @@ function jaccard(a: string[], b: string[]): number {
 export function clusterArticles(articles: StoryArticle[]): StoryGroup[] {
   const sorted = [...articles].sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))
   const vecs = vectors(sorted)
+  // Rare headline words (places, names): a weak match must share one in both headlines.
+  const titleToks = sorted.map(a => new Set(tokens(a.title)))
+  const titleDf = new Map<string, number>()
+  for (const ts of titleToks) for (const t of ts) titleDf.set(t, (titleDf.get(t) ?? 0) + 1)
+  const rareAt = Math.max(3, Math.ceil(sorted.length * 0.004))
   const titleKey = sorted.map(a => normalize(a.title))
-  const sim = (i: number, j: number) => titleKey[i] && titleKey[i] === titleKey[j] ? 1 : Math.min(1, cosine(vecs[i], vecs[j]) + TAG_BONUS * jaccard(sorted[i].tags, sorted[j].tags))
+  const raw = (i: number, j: number) => titleKey[i] && titleKey[i] === titleKey[j] ? 1 : Math.min(1, cosine(vecs[i], vecs[j]) + TAG_BONUS * jaccard(sorted[i].tags, sorted[j].tags))
+  const anchored = (i: number, j: number) => {
+    for (const t of titleToks[i]) if (titleToks[j].has(t) && !GENERIC.has(t) && (titleDf.get(t) ?? 0) <= rareAt) return true
+    return false
+  }
+  const sim = (i: number, j: number) => {
+    const x = raw(i, j)
+    return x < ANCHOR_BELOW && !anchored(i, j) ? 0 : x
+  }
   const groups: Array<{ idx: number[]; last: number; joinSim: Map<number, number> }> = []
   const windowMs = STORY_WINDOW_H * 3600_000
+  const routine = sorted.map(a => isRoutine(a.title))
   for (let i = 0; i < sorted.length; i++) {
     let best: { g: (typeof groups)[number]; max: number } | null = null
-    for (const g of groups) {
-      if (sorted[i].at - g.last > windowMs) continue
+    for (const g of routine[i] ? [] : groups) {
+      if (sorted[i].at - g.last > windowMs || routine[g.idx[0]]) continue
       const sims = g.idx.map(j => sim(i, j))
-      const max = Math.max(...sims)
+      // The best match must come from another outlet, or be an identical headline (a duplicate).
+      const max = Math.max(...g.idx.map((j, n) => sorted[j].outlet !== sorted[i].outlet || sims[n] === 1 ? sims[n] : 0))
       const mean = sims.reduce((x, y) => x + y, 0) / sims.length
       if (max >= JOIN_AT && mean >= MEAN_AT && (!best || max > best.max)) best = { g, max }
     }
