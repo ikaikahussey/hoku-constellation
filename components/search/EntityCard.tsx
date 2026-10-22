@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Badge } from '@/components/ui/Badge'
 import type { EntityKind, EntityRow } from '@/lib/db/types'
+import { IGNORED_TAGS, tagLabel } from '@/lib/entity-roles'
 
 export interface EntityCardProps {
   id: string
@@ -62,8 +63,8 @@ export function EntityCard({ id, kind, name, slug, subtitle, badges, island, sta
         {subtitle && <p className="text-sm text-muted">{subtitle}</p>}
         {(badges.length > 0 || island) && (
           <div className="flex flex-wrap gap-1.5 mt-2">
-            {badges.map(badge => (
-              <Badge key={badge} variant={kind === 'person' ? 'outline' : 'default'}>{badge.replace(/_/g, ' ')}</Badge>
+            {badges.filter(b => kind !== 'person' || !IGNORED_TAGS.includes(b)).map(badge => (
+              <Badge key={badge} variant={kind === 'person' ? 'outline' : 'default'}>{kind === 'person' ? tagLabel(badge) : badge.replace(/_/g, ' ')}</Badge>
             ))}
             {island && <Badge variant="muted">{island}</Badge>}
           </div>

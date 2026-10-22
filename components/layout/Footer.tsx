@@ -29,7 +29,7 @@ export function Footer() {
           <nav aria-label="Browse">
             <h3 className="text-xs font-bold uppercase tracking-wide mb-3">Browse</h3>
             <ul className="space-y-2 text-sm">
-              <li><Link href="/search?type=person&entityType=elected_official">Elected Officials</Link></li>
+              <li><Link href="/explore?role=political">Candidates &amp; officeholders</Link></li>
               <li><Link href="/search?type=person&entityType=lobbyist">Lobbyists</Link></li>
               <li><Link href="/search?type=person&entityType=donor">Campaign Donors</Link></li>
               <li><Link href="/search?type=organization&sector=energy">Energy Sector</Link></li>

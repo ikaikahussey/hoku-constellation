@@ -1,9 +1,9 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { notFound } from 'next/navigation'
+import { notFound, permanentRedirect } from 'next/navigation'
 import { getServiceDb } from '@/lib/db/service'
 import { listEntities } from '@/lib/db/queries'
-import { GROUP_LABEL, categoriesInGroup, categoryListOptions, exploreHref, getExploreCategory } from '@/lib/explore/categories'
+import { CATEGORY_SLUG_ALIASES, GROUP_LABEL, categoriesInGroup, categoryListOptions, exploreHref, getExploreCategory } from '@/lib/explore/categories'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
 import { EntityCard, entityRowToCard } from '@/components/search/EntityCard'
@@ -16,7 +16,7 @@ interface Props { params: Promise<{ slug: string }>; searchParams: Promise<{ pag
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
-  const category = getExploreCategory(slug)
+  const category = getExploreCategory(CATEGORY_SLUG_ALIASES[slug] ?? slug)
   if (!category) return { title: 'Not found' }
   return {
     title: `${category.label} — Explore`,
@@ -33,6 +33,7 @@ function pageNumber(raw: string | undefined): number {
 
 export default async function ExploreCategoryPage({ params, searchParams }: Props) {
   const [{ slug }, { page: rawPage }] = await Promise.all([params, searchParams])
+  if (CATEGORY_SLUG_ALIASES[slug]) permanentRedirect(exploreHref(CATEGORY_SLUG_ALIASES[slug]))
   const category = getExploreCategory(slug)
   if (!category) notFound()
 

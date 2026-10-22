@@ -36,7 +36,7 @@ export default function HomePage() {
               <div>
                 <p className="text-xs font-bold uppercase tracking-wide text-muted mb-2">01</p>
                 <h3 className="text-xl font-bold mb-2">Search</h3>
-                <p className="text-muted">Find anyone in Hawaiʻi public life: elected officials, lobbyists, donors, and the organizations that connect them.</p>
+                <p className="text-muted">Find anyone in Hawaiʻi public life: candidates and officeholders, lobbyists, donors, and the organizations that connect them.</p>
               </div>
               <div>
                 <p className="text-xs font-bold uppercase tracking-wide text-muted mb-2">02</p>
@@ -65,7 +65,7 @@ export default function HomePage() {
               <Link href="/pricing" className={buttonClass('primary', 'lg')}>Start your free trial</Link>
             </div>
             <ul className="border border-rule divide-y divide-rule text-sm">
-              <li className="p-4">Elected officials, lobbyists, donors, executives</li>
+              <li className="p-4">Candidates, officeholders, lobbyists, donors, executives</li>
               <li className="p-4">Government agencies, corporations, nonprofits, PACs</li>
               <li className="p-4">Relationships: employment, boards, lobbying, donations</li>
               <li className="p-4">Campaign contributions indexed and linked</li>

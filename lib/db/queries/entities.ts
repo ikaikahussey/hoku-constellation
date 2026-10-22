@@ -30,6 +30,8 @@ export interface ListEntitiesOptions {
   officeHeldLike?: string[]
   /** org.attributes.sector matches any of these, compared case-insensitively with spaces/hyphens folded to underscores */
   sector?: string | string[]
+  /** org.attributes.org_type matches any of these, folded like `sector` */
+  orgType?: string[]
   /** attributes.island equals any of these values (case-insensitive) */
   island?: string[]
   limit?: number
@@ -58,8 +60,30 @@ function buildWhere(opts: ListEntitiesOptions): { where: string; params: unknown
     const sectors = (Array.isArray(opts.sector) ? opts.sector : [opts.sector]).map(foldToken)
     params.push(sectors); where.push(`lower(regexp_replace(attributes ->> 'sector', '[\\s-]+', '_', 'g')) = any($${params.length}::text[])`)
   }
+  if (opts.orgType?.length) {
+    params.push(opts.orgType.map(foldToken)); where.push(`lower(regexp_replace(attributes ->> 'org_type', '[\\s-]+', '_', 'g')) = any($${params.length}::text[])`)
+  }
   if (opts.island?.length) { params.push(opts.island.map(i => i.toLowerCase())); where.push(`lower(attributes ->> 'island') = any($${params.length}::text[])`) }
   return { where: where.join(' and '), params }
+}
+
+export type EntityFacet = 'entity_types' | 'org_type' | 'sector' | 'island' | 'status'
+
+/**
+ * Value counts for one attribute across the entities matching `opts`. Text attributes are folded
+ * (`foldToken`), `island` is lower-cased, and `entity_types` is unnested.
+ */
+export async function entityFacetCounts(db: Db, facet: EntityFacet, opts: ListEntitiesOptions = {}): Promise<Map<string, number>> {
+  const { where, params } = buildWhere(opts)
+  const sql = facet === 'entity_types'
+    ? `select t as v, count(*)::text n from entity,
+         jsonb_array_elements_text(case when jsonb_typeof(attributes -> 'entity_types') = 'array' then attributes -> 'entity_types' else '[]'::jsonb end) t
+       where ${where} group by t`
+    : facet === 'island'
+      ? `select lower(trim(attributes ->> 'island')) v, count(*)::text n from entity where ${where} and coalesce(trim(attributes ->> 'island'), '') <> '' group by 1`
+      : `select lower(regexp_replace(trim(attributes ->> '${facet}'), '[\\s-]+', '_', 'g')) v, count(*)::text n from entity where ${where} and coalesce(trim(attributes ->> '${facet}'), '') <> '' group by 1`
+  const rows = await db.many<{ v: string; n: string }>(sql, params)
+  return new Map(rows.map(r => [r.v, Number(r.n)]))
 }
 
 /** Number of entities matching the same filters `listEntities` accepts. */

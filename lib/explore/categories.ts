@@ -1,5 +1,6 @@
 import type { EntityKind } from '@/lib/db/types'
 import type { ListEntitiesOptions } from '@/lib/db/queries/entities'
+import { POLITICAL_TAGS } from '@/lib/entity-roles'
 
 /**
  * Browse categories for /explore/<slug>. Each category is a fixed, shareable URL that lists the
@@ -18,9 +19,9 @@ export interface ExploreCategory {
 
 export const EXPLORE_CATEGORIES: readonly ExploreCategory[] = [
   // ---- by office (people)
-  { slug: 'elected-officials', label: 'Elected officials', group: 'office', kind: 'person',
-    description: 'People currently or formerly holding elected office in Hawaiʻi.',
-    filter: { entityTypes: ['elected_official'] } },
+  { slug: 'candidates-officeholders', label: 'Candidates & officeholders', group: 'office', kind: 'person',
+    description: 'Candidates for office in Hawaiʻi, including current and former officeholders and candidates who were not elected.',
+    filter: { entityTypes: [...POLITICAL_TAGS] } },
   { slug: 'appointed-officials', label: 'Appointed officials', group: 'office', kind: 'person',
     description: 'Cabinet directors, deputies, and other appointees.',
     filter: { entityTypes: ['appointed_official'] } },
@@ -45,6 +46,9 @@ export const EXPLORE_CATEGORIES: readonly ExploreCategory[] = [
 ]
 
 export const GROUP_LABEL: Record<ExploreGroup, string> = { office: 'By office', sector: 'By sector', island: 'By island' }
+
+/** Retired slugs → current slug (the category page redirects). */
+export const CATEGORY_SLUG_ALIASES: Readonly<Record<string, string>> = { 'elected-officials': 'candidates-officeholders' }
 
 export function getExploreCategory(slug: string): ExploreCategory | null {
   return EXPLORE_CATEGORIES.find(c => c.slug === slug) ?? null

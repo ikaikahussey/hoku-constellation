@@ -1,17 +1,9 @@
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation'
+import { ROLE_GROUPS, roleGroupForTag } from '@/lib/entity-roles'
 
-const ENTITY_TYPES = [
-  { value: 'elected_official', label: 'Elected Official' },
-  { value: 'appointed_official', label: 'Appointed Official' },
-  { value: 'lobbyist', label: 'Lobbyist' },
-  { value: 'donor', label: 'Donor' },
-  { value: 'contractor', label: 'Contractor' },
-  { value: 'nonprofit_leader', label: 'Nonprofit Leader' },
-  { value: 'business_leader', label: 'Business Leader' },
-  { value: 'labor_leader', label: 'Labor Leader' },
-]
+const ENTITY_TYPES = ROLE_GROUPS.slice(0, 8).map(g => ({ value: g.key, label: g.label }))
 
 const ISLANDS = ['Oahu', 'Maui', 'Hawaii', 'Kauai', 'Molokai', 'Lanai', 'Statewide']
 
@@ -43,7 +35,8 @@ export function SearchFilters() {
   const currentType = searchParams.get('type') || ''
   const currentIsland = searchParams.get('island') || ''
   const currentStatus = searchParams.get('status') || ''
-  const currentEntityType = searchParams.get('entityType') || ''
+  const rawEntityType = searchParams.get('entityType') || ''
+  const currentEntityType = roleGroupForTag(rawEntityType)?.key ?? rawEntityType
 
   return (
     <div className="space-y-6">

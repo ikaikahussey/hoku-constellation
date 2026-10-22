@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createTestDb, type TestDb } from './helpers/pglite'
 import { listEntities, countEntities, foldToken } from '@/lib/db/queries/entities'
-import { EXPLORE_CATEGORIES, categoriesInGroup, categoryListOptions, exploreHref, getExploreCategory } from '@/lib/explore/categories'
+import { CATEGORY_SLUG_ALIASES, EXPLORE_CATEGORIES, categoriesInGroup, categoryListOptions, exploreHref, getExploreCategory } from '@/lib/explore/categories'
 
 let db: TestDb
 
@@ -12,6 +12,7 @@ beforeAll(async () => {
       ('person', 'Josh Green',    '{"slug":"josh-green","entity_types":["person","elected_official"],"office_held":"Governor","island":"Oahu"}'),
       ('person', 'Rick Blangiardi','{"slug":"rick-blangiardi","entity_types":["person","elected_official"],"office_held":"Mayor, City and County of Honolulu","island":"Oahu"}'),
       ('person', 'Leo Asuncion',  '{"slug":"leo-asuncion","entity_types":["person","appointed_official"],"office_held":"Chair, Public Utilities Commission","island":"Oʻahu"}'),
+      ('person', 'Pat Hopeful',   '{"slug":"pat-hopeful","entity_types":["person","candidate"],"island":"Maui","status":"active"}'),
       ('person', 'Merged Person', '{"slug":"merged","entity_types":["person","elected_official"]}'),
       ('org', 'Hawaiian Electric', '{"slug":"hawaiian-electric","org_type":"corporation","sector":"Energy","island":"Oahu"}'),
       ('org', 'Alexander & Baldwin','{"slug":"alexander-baldwin","org_type":"corporation","sector":"real_estate","island":"Maui"}'),
@@ -66,15 +67,16 @@ describe('explore categories', () => {
       expect(exploreHref(slug)).toBe(`/explore/${slug}`)
     }
     expect(getExploreCategory('no-such-category')).toBeNull()
+    for (const target of Object.values(CATEGORY_SLUG_ALIASES)) expect(getExploreCategory(target)).not.toBeNull()
   })
   it('covers every group shown on the explore page', () => {
-    expect(categoriesInGroup('office').map(c => c.slug)).toEqual(['elected-officials', 'appointed-officials', 'county-mayors', 'puc-commissioners'])
+    expect(categoriesInGroup('office').map(c => c.slug)).toEqual(['candidates-officeholders', 'appointed-officials', 'county-mayors', 'puc-commissioners'])
     expect(categoriesInGroup('sector')).toHaveLength(6)
     expect(categoriesInGroup('island').map(c => c.slug)).toEqual(['oahu', 'maui', 'hawaii-island', 'kauai'])
   })
   it('each category resolves to the expected seeded entities', async () => {
     const expected: Record<string, string[]> = {
-      'elected-officials': ['Josh Green', 'Rick Blangiardi'],
+      'candidates-officeholders': ['Josh Green', 'Pat Hopeful', 'Rick Blangiardi'],
       'appointed-officials': ['Leo Asuncion'],
       'county-mayors': ['Rick Blangiardi'],
       'puc-commissioners': ['Leo Asuncion'],
@@ -82,7 +84,7 @@ describe('explore categories', () => {
       'real-estate': ['Alexander & Baldwin', 'Kauaʻi Realty'],
       healthcare: [], tourism: [], construction: [], finance: [],
       oahu: ['Hawaii Gas', 'Hawaiian Electric', 'Josh Green', 'Leo Asuncion', 'Rick Blangiardi'],
-      maui: ['Alexander & Baldwin'],
+      maui: ['Alexander & Baldwin', 'Pat Hopeful'],
       'hawaii-island': [],
       kauai: ['Kauaʻi Realty'],
     }
