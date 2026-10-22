@@ -23,13 +23,17 @@ export interface ListEntitiesOptions {
   kind?: EntityRow['kind'] | EntityRow['kind'][]
   q?: string
   featured?: boolean
-  status?: string
-  /** person.attributes.entity_types overlaps any of these values */
+  status?: string | string[]
+  /** attributes.entity_types overlaps any of these values */
   entityTypes?: string[]
+  /** attributes.entity_types must overlap every one of these lists (AND of ORs) */
+  tagClauses?: string[][]
   /** person.attributes.office_held ILIKE any of these patterns */
   officeHeldLike?: string[]
   /** org.attributes.sector matches any of these, compared case-insensitively with spaces/hyphens folded to underscores */
   sector?: string | string[]
+  /** org.attributes.org_type matches any of these, folded like `sector` */
+  orgType?: string[]
   /** attributes.island equals any of these values (case-insensitive) */
   island?: string[]
   limit?: number
@@ -51,15 +55,53 @@ function buildWhere(opts: ListEntitiesOptions): { where: string; params: unknown
   }
   if (opts.q) { params.push(`%${opts.q}%`); where.push(`(name ilike $${params.length} or exists (select 1 from unnest(aliases) a where a ilike $${params.length}))`) }
   if (opts.featured !== undefined) { params.push(opts.featured); where.push(`coalesce((attributes ->> 'is_featured')::boolean, false) = $${params.length}`) }
-  if (opts.status) { params.push(opts.status); where.push(`attributes ->> 'status' = $${params.length}`) }
+  if (opts.status && opts.status.length) {
+    params.push((Array.isArray(opts.status) ? opts.status : [opts.status]).map(s => s.toLowerCase()))
+    where.push(`lower(attributes ->> 'status') = any($${params.length}::text[])`)
+  }
   if (opts.entityTypes?.length) { params.push(opts.entityTypes); where.push(`(attributes -> 'entity_types') ?| $${params.length}::text[]`) }
+  for (const clause of opts.tagClauses ?? []) {
+    params.push(clause); where.push(`(attributes -> 'entity_types') ?| $${params.length}::text[]`)
+  }
   if (opts.officeHeldLike?.length) { params.push(opts.officeHeldLike); where.push(`(attributes ->> 'office_held') ilike any($${params.length}::text[])`) }
   if (opts.sector) {
     const sectors = (Array.isArray(opts.sector) ? opts.sector : [opts.sector]).map(foldToken)
     params.push(sectors); where.push(`lower(regexp_replace(attributes ->> 'sector', '[\\s-]+', '_', 'g')) = any($${params.length}::text[])`)
   }
+  if (opts.orgType?.length) {
+    params.push(opts.orgType.map(foldToken)); where.push(`lower(regexp_replace(attributes ->> 'org_type', '[\\s-]+', '_', 'g')) = any($${params.length}::text[])`)
+  }
   if (opts.island?.length) { params.push(opts.island.map(i => i.toLowerCase())); where.push(`lower(attributes ->> 'island') = any($${params.length}::text[])`) }
   return { where: where.join(' and '), params }
+}
+
+export type EntityFacet = 'entity_types' | 'org_type' | 'sector' | 'island' | 'status'
+
+/**
+ * Value counts for one attribute across the entities matching `opts`. Text attributes are folded
+ * (`foldToken`), `island` is lower-cased, and `entity_types` is unnested.
+ */
+export async function entityFacetCounts(db: Db, facet: EntityFacet, opts: ListEntitiesOptions = {}): Promise<Map<string, number>> {
+  const { where, params } = buildWhere(opts)
+  const sql = facet === 'entity_types'
+    ? `select t as v, count(*)::text n from entity,
+         jsonb_array_elements_text(case when jsonb_typeof(attributes -> 'entity_types') = 'array' then attributes -> 'entity_types' else '[]'::jsonb end) t
+       where ${where} group by t`
+    : facet === 'island'
+      ? `select lower(trim(attributes ->> 'island')) v, count(*)::text n from entity where ${where} and coalesce(trim(attributes ->> 'island'), '') <> '' group by 1`
+      : `select lower(regexp_replace(trim(attributes ->> '${facet}'), '[\\s-]+', '_', 'g')) v, count(*)::text n from entity where ${where} and coalesce(trim(attributes ->> '${facet}'), '') <> '' group by 1`
+  const rows = await db.many<{ v: string; n: string }>(sql, params)
+  return new Map(rows.map(r => [r.v, Number(r.n)]))
+}
+
+/** For each named group of tags, the number of entities matching `opts` that carry at least one of them. */
+export async function entityTagGroupCounts(db: Db, groups: Record<string, string[]>, opts: ListEntitiesOptions = {}): Promise<Map<string, number>> {
+  const keys = Object.keys(groups)
+  if (!keys.length) return new Map()
+  const { where, params } = buildWhere(opts)
+  const cols = keys.map((k, i) => { params.push(groups[k]); return `count(*) filter (where (attributes -> 'entity_types') ?| $${params.length}::text[])::text as g${i}` })
+  const row = await db.one<Record<string, string>>(`select ${cols.join(', ')} from entity where ${where}`, params)
+  return new Map(keys.map((k, i) => [k, Number(row?.[`g${i}`] ?? 0)]))
 }
 
 /** Number of entities matching the same filters `listEntities` accepts. */

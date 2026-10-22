@@ -104,7 +104,7 @@ export function PersonForm({ person }: PersonFormProps) {
             return (
               <button key={t} type="button" onClick={() => toggleType(t)} aria-pressed={on}
                 className={`btn px-3 py-1.5 text-sm border ${on ? 'bg-ink text-paper border-ink font-bold' : 'bg-paper text-ink border-rule hover:border-ink'}`}>
-                {t.replace(/_/g, ' ')}
+                {t === 'elected_official' ? 'candidate or officeholder' : t.replace(/_/g, ' ')}
               </button>
             )
           })}
