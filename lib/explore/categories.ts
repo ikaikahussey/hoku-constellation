@@ -1,6 +1,5 @@
 import type { EntityKind } from '@/lib/db/types'
 import type { ListEntitiesOptions } from '@/lib/db/queries/entities'
-import { POLITICAL_TAGS } from '@/lib/entity-roles'
 
 /**
  * Browse categories for /explore/<slug>. Each category is a fixed, shareable URL that lists the
@@ -21,7 +20,7 @@ export const EXPLORE_CATEGORIES: readonly ExploreCategory[] = [
   // ---- by office (people)
   { slug: 'candidates-officeholders', label: 'Candidates & officeholders', group: 'office', kind: 'person',
     description: 'Candidates for office in Hawaiʻi, including current and former officeholders and candidates who were not elected.',
-    filter: { entityTypes: [...POLITICAL_TAGS] } },
+    filter: { entityTypes: ['candidate', 'elected_official', 'legislator'] } },
   { slug: 'appointed-officials', label: 'Appointed officials', group: 'office', kind: 'person',
     description: 'Cabinet directors, deputies, and other appointees.',
     filter: { entityTypes: ['appointed_official'] } },

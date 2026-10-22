@@ -1,9 +1,10 @@
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ROLE_GROUPS, roleGroupForTag } from '@/lib/entity-roles'
+import { normalizeToken, TAG_TAXONOMY } from '@/lib/entity-tags'
 
-const ENTITY_TYPES = ROLE_GROUPS.slice(0, 8).map(g => ({ value: g.key, label: g.label }))
+/** Top-level tag branches. Multi-tag filtering lives on /explore. */
+const ENTITY_TYPES = TAG_TAXONOMY.map(b => ({ value: b.key, label: b.label }))
 
 const ISLANDS = ['Oahu', 'Maui', 'Hawaii', 'Kauai', 'Molokai', 'Lanai', 'Statewide']
 
@@ -35,8 +36,7 @@ export function SearchFilters() {
   const currentType = searchParams.get('type') || ''
   const currentIsland = searchParams.get('island') || ''
   const currentStatus = searchParams.get('status') || ''
-  const rawEntityType = searchParams.get('entityType') || ''
-  const currentEntityType = roleGroupForTag(rawEntityType)?.key ?? rawEntityType
+  const currentEntityType = normalizeToken(searchParams.get('entityType') || '')
 
   return (
     <div className="space-y-6">
@@ -48,9 +48,9 @@ export function SearchFilters() {
         <FilterButton active={currentType === 'bill'} onClick={() => updateFilter('type', 'bill')}>Bills</FilterButton>
       </fieldset>
 
-      {(currentType === '' || currentType === 'person') && (
+      {currentType !== 'bill' && (
         <fieldset>
-          <legend className="text-xs font-bold uppercase tracking-wide mb-2">Person type</legend>
+          <legend className="text-xs font-bold uppercase tracking-wide mb-2">Tags</legend>
           {ENTITY_TYPES.map(et => (
             <FilterButton
               key={et.value}

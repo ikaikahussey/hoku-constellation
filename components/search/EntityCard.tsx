@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Badge } from '@/components/ui/Badge'
 import type { EntityKind, EntityRow } from '@/lib/db/types'
-import { IGNORED_TAGS, tagLabel } from '@/lib/entity-roles'
+import { IGNORED_TAGS, tagLabel } from '@/lib/entity-tags'
 
 export interface EntityCardProps {
   id: string

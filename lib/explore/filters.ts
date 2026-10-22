@@ -1,46 +1,50 @@
 import type { EntityKind } from '@/lib/db/types'
-import type { ListEntitiesOptions } from '@/lib/db/queries/entities'
-import { tagsForRole } from '@/lib/entity-roles'
+import { foldToken, type ListEntitiesOptions } from '@/lib/db/queries/entities'
+import { normalizeToken, tagsForToken, type TagTreeBranch } from '@/lib/entity-tags'
 
 /**
  * /explore filter state. Every filter is a query-string parameter so any view is a shareable URL.
+ * Multi-value filters repeat the parameter (`tag=lobbyist&tag=donor`); comma lists are also accepted.
  *   q       name or alias contains
  *   kind    person | org (omitted = both)
- *   role    person role group key or raw entity_types tag (lib/entity-roles.ts)
- *   orgType org.attributes.org_type (folded)
- *   sector  org.attributes.sector (folded)
- *   island  canonical island key (oahu, maui, hawaii, kauai, molokai, lanai, niihau, statewide) or a raw value
- *   status  attributes.status
+ *   tag     tags or taxonomy branches (lib/entity-tags.ts); `role` is accepted as a legacy alias
+ *   match   any (default) | all — whether an entity needs any or every selected tag
+ *   orgType org.attributes.org_type (folded), any of
+ *   sector  org.attributes.sector (folded), any of
+ *   island  canonical island keys, any of
+ *   status  attributes.status, any of
  *   sort    name (default) | updated | added
  *   page    1-based
  */
 export type ExploreKind = 'person' | 'org'
 export type ExploreSort = 'name' | 'updated' | 'added'
+export type TagMatch = 'any' | 'all'
 
 export interface ExploreFilters {
   q: string
   kind: ExploreKind | null
-  role: string
-  orgType: string
-  sector: string
-  island: string
-  status: string
+  tags: string[]
+  match: TagMatch
+  orgTypes: string[]
+  sectors: string[]
+  islands: string[]
+  statuses: string[]
   sort: ExploreSort
   page: number
 }
 
-export const FILTER_KEYS = ['q', 'kind', 'role', 'orgType', 'sector', 'island', 'status', 'sort', 'page'] as const
-export type FilterKey = (typeof FILTER_KEYS)[number]
+export type FilterKey = 'tags' | 'orgTypes' | 'sectors' | 'islands' | 'statuses'
+export const MULTI_KEYS: readonly FilterKey[] = ['tags', 'orgTypes', 'sectors', 'islands', 'statuses']
 
 export interface FacetOption { value: string; label: string; count: number }
 
 export interface ExploreFacets {
   kind: { person: number; org: number }
-  role: FacetOption[]
-  orgType: FacetOption[]
-  sector: FacetOption[]
-  island: FacetOption[]
-  status: FacetOption[]
+  tags: TagTreeBranch[]
+  orgTypes: FacetOption[]
+  sectors: FacetOption[]
+  islands: FacetOption[]
+  statuses: FacetOption[]
 }
 
 export const EXPLORE_PAGE_SIZE = 50
@@ -78,6 +82,20 @@ function one(p: RawParams, k: string): string {
   return (Array.isArray(v) ? v[0] : v ?? '').trim().slice(0, 200)
 }
 
+/** All values of a repeated and/or comma-separated parameter, trimmed and de-duplicated. */
+function many(p: RawParams, ...keys: string[]): string[] {
+  const out: string[] = []
+  for (const k of keys) {
+    const v = p[k]
+    for (const item of Array.isArray(v) ? v : v ? [v] : []) {
+      for (const part of item.split(',')) { const t = part.trim().slice(0, 100); if (t && !out.includes(t)) out.push(t) }
+    }
+  }
+  return out.slice(0, 50)
+}
+
+const uniq = (xs: string[]) => [...new Set(xs)]
+
 export function parseExploreFilters(p: RawParams): ExploreFilters {
   const kindRaw = one(p, 'kind')
   const kind: ExploreKind | null = kindRaw === 'person' || kindRaw === 'people' ? 'person'
@@ -88,33 +106,41 @@ export function parseExploreFilters(p: RawParams): ExploreFilters {
   return {
     q: one(p, 'q'),
     kind,
-    role: one(p, 'role'),
-    orgType: one(p, 'orgType'),
-    sector: one(p, 'sector'),
-    island: one(p, 'island') ? islandKey(one(p, 'island')) : '',
-    status: one(p, 'status').toLowerCase(),
+    tags: uniq(many(p, 'tag', 'role').map(normalizeToken)),
+    match: one(p, 'match') === 'all' ? 'all' : 'any',
+    orgTypes: uniq(many(p, 'orgType').map(foldToken)),
+    sectors: uniq(many(p, 'sector').map(foldToken)),
+    islands: uniq(many(p, 'island').map(islandKey)),
+    statuses: uniq(many(p, 'status').map(s => s.toLowerCase())),
     sort,
     page: Number.isFinite(page) && page >= 1 ? page : 1,
   }
 }
 
+/** Tag tokens → `listEntities` tag options for the match mode. */
+export function tagOptions(tokens: string[], match: TagMatch): Pick<ListEntitiesOptions, 'entityTypes' | 'tagClauses'> {
+  if (!tokens.length) return {}
+  if (match === 'all') return { tagClauses: tokens.map(tagsForToken) }
+  return { entityTypes: uniq(tokens.flatMap(tagsForToken)) }
+}
+
 /**
- * `listEntities` options for the filters. Role filters apply to people only and org-type/sector filters to
- * organizations only, so choosing one narrows the kind.
+ * `listEntities` options for the filters, optionally leaving one facet out (for that facet's counts).
+ * Tags apply to people and organizations alike. Org-type and sector filters apply to organizations only,
+ * so choosing one narrows the kind.
  */
 export function filtersToListOptions(f: ExploreFilters, omit?: FilterKey): ListEntitiesOptions {
   const on = (k: FilterKey) => k !== omit
   let kinds: EntityKind[] = f.kind ? [f.kind] : ['person', 'org']
-  if (on('role') && f.role) kinds = kinds.filter(k => k === 'person')
-  if ((on('orgType') && f.orgType) || (on('sector') && f.sector)) kinds = kinds.filter(k => k === 'org')
+  if ((on('orgTypes') && f.orgTypes.length) || (on('sectors') && f.sectors.length)) kinds = kinds.filter(k => k === 'org')
   return {
-    kind: kinds, // empty when people-only and org-only filters are combined: no results
+    kind: kinds, // empty when kind=person is combined with an org-only filter: no results
     q: f.q || undefined,
-    entityTypes: on('role') && f.role ? tagsForRole(f.role) : undefined,
-    orgType: on('orgType') && f.orgType ? [f.orgType] : undefined,
-    sector: on('sector') && f.sector ? f.sector : undefined,
-    island: on('island') && f.island ? islandVariants(f.island) : undefined,
-    status: on('status') && f.status ? f.status : undefined,
+    ...(on('tags') ? tagOptions(f.tags, f.match) : {}),
+    orgType: on('orgTypes') && f.orgTypes.length ? f.orgTypes : undefined,
+    sector: on('sectors') && f.sectors.length ? f.sectors : undefined,
+    island: on('islands') && f.islands.length ? f.islands.flatMap(islandVariants) : undefined,
+    status: on('statuses') && f.statuses.length ? f.statuses : undefined,
   }
 }
 
@@ -129,17 +155,23 @@ export function exploreUrl(f: ExploreFilters, patch: Partial<ExploreFilters> = {
   const sp = new URLSearchParams()
   if (next.q) sp.set('q', next.q)
   if (next.kind) sp.set('kind', next.kind)
-  if (next.role) sp.set('role', next.role)
-  if (next.orgType) sp.set('orgType', next.orgType)
-  if (next.sector) sp.set('sector', next.sector)
-  if (next.island) sp.set('island', next.island)
-  if (next.status) sp.set('status', next.status)
+  for (const t of next.tags) sp.append('tag', t)
+  if (next.match === 'all' && next.tags.length > 1) sp.set('match', 'all')
+  for (const v of next.orgTypes) sp.append('orgType', v)
+  for (const v of next.sectors) sp.append('sector', v)
+  for (const v of next.islands) sp.append('island', v)
+  for (const v of next.statuses) sp.append('status', v)
   if (next.sort !== 'name') sp.set('sort', next.sort)
   if (next.page > 1) sp.set('page', String(next.page))
   const qs = sp.toString()
   return qs ? `/explore?${qs}` : '/explore'
 }
 
+/** `values` with `value` added or removed. */
+export function toggle(values: readonly string[], value: string): string[] {
+  return values.includes(value) ? values.filter(v => v !== value) : [...values, value]
+}
+
 export function hasActiveFilters(f: ExploreFilters): boolean {
-  return !!(f.q || f.kind || f.role || f.orgType || f.sector || f.island || f.status)
+  return !!(f.q || f.kind || f.tags.length || f.orgTypes.length || f.sectors.length || f.islands.length || f.statuses.length)
 }

@@ -8,7 +8,7 @@ import { Footer } from '@/components/layout/Footer'
 import { SearchBar } from '@/components/search/SearchBar'
 import { SearchFilters } from '@/components/search/SearchFilters'
 import { SearchResults } from '@/components/search/SearchResults'
-import { tagsForRole } from '@/lib/entity-roles'
+import { tagsForToken } from '@/lib/entity-tags'
 import { entityRowToCard, type EntityCardProps } from '@/components/search/EntityCard'
 
 export const dynamic = 'force-dynamic'
@@ -35,7 +35,7 @@ async function getResults(p: Params): Promise<{ results: EntityCardProps[]; tota
   if (query) {
     const { results, total } = await searchEntities(db, query, {
       kind: kind ?? ['person', 'org', 'bill'],
-      entityTypes: p.entityType ? tagsForRole(p.entityType) : undefined,
+      entityTypes: p.entityType ? tagsForToken(p.entityType) : undefined,
       island: p.island || undefined,
       sector: p.sector || undefined,
       status: p.status || undefined,
@@ -53,7 +53,7 @@ async function getResults(p: Params): Promise<{ results: EntityCardProps[]; tota
     status: p.status || undefined,
     island: p.island ? [p.island] : undefined,
     sector: p.sector || undefined,
-    entityTypes: p.entityType ? tagsForRole(p.entityType) : undefined,
+    entityTypes: p.entityType ? tagsForToken(p.entityType) : undefined,
     limit: 40,
     orderBy: 'name',
   })
